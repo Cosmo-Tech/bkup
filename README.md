@@ -91,13 +91,19 @@
     PUSHGATEWAY_URL=http://localhost:9091
     ```
 
+
+* run
+  ```
+  python -m src.main
+  ```
+
 ## Install locally with Docker
-* build image
+* build
   ```
   docker build . --tag clustersnap:local
   ```
 
-* run image
+* run
   ```
   docker run clustersnap:local
   ```
@@ -113,7 +119,7 @@
   ```
 * create pod
   ```
-  kubectl apply -f tests/pod.yaml -n NAMESPACE
+  NAMESPACE=tenant-test0 envsubst < tests/resources.yaml | kubectl apply -f -
   ```
 
 
