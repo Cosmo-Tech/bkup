@@ -181,22 +181,22 @@ touch .env
 ```dotenv
 # Core
 MODE=export
-NAMESPACE=tenant-alpha
+NAMESPACE=tenant-sphinx
 PROVIDER=s3
-BUCKET=clustersnap-backups
+BUCKET=velero
 BACKUP_DIR=/tmp/clustersnap
 REMOTE_PREFIX=clustersnap/backups
 LOG_LEVEL=INFO
 
 # AWS S3 / MinIO / SeaweedFS
 AWS_ACCESS_KEY_ID=minioadmin
-AWS_SECRET_ACCESS_KEY=minioadmin
+AWS_SECRET_ACCESS_KEY="minio&é&é&"
 AWS_REGION=us-east-1
 # Remove or leave blank for real AWS S3; set to MinIO / SeaweedFS address otherwise:
-S3_ENDPOINT_URL=http://localhost:9000
+S3_ENDPOINT_URL=http://localhost:9000  minio-api.local
 
 # Observability
-PUSHGATEWAY_URL=http://localhost:9091
+PUSHGATEWAY_URL=http://localhost:9091  
 ```
 
 #### `.env` template — Azure Blob Storage (shared-key)

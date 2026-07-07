@@ -38,6 +38,21 @@ AZURE_TENANT_ID         }
 Observability
 ~~~~~~~~~~~~~
 PUSHGATEWAY_URL         (default: http://prometheus-pushgateway:9091)
+
+Kubernetes
+~~~~~~~~~~
+KUBE_CONTEXT            kubectl context for target cluster (default: current)
+
+Import-specific
+~~~~~~~~~~~~~~~
+HELPER_POD_IMAGE        Image for disposable restore pods (default: debian:bookworm-slim)
+SCALE_WAIT_SECONDS      Seconds to wait after scale-down (default: 15)
+HELPER_POD_TIMEOUT_SECONDS  kubectl wait timeout for helper pod Ready (default: 60)
+
+Secret migration (import mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+SOURCE_KUBE_CONTEXT     kubectl context of the source cluster to read secrets from
+SKIP_SECRET_MIGRATION   Set to "true" to skip secret migration (default: false)
 """
 
 from __future__ import annotations
@@ -153,6 +168,31 @@ class AppConfig(BaseModel):
     # If None, kubectl uses the current active context (i.e. in-cluster config
     # when running as a CronJob, or ~/.kube/config current-context locally).
     kube_context: Optional[str] = Field(default=None, alias="KUBE_CONTEXT")
+
+    # ── Import-specific ───────────────────────────────────────────────────────
+
+    # Image used for disposable helper pods that mount each PVC during restore.
+    helper_pod_image: str = Field(
+        default="debian:bookworm-slim", alias="HELPER_POD_IMAGE"
+    )
+    # Seconds to wait after scaling all workloads to 0 before starting restore.
+    scale_wait_seconds: int = Field(default=15, alias="SCALE_WAIT_SECONDS")
+    # kubectl wait --timeout for helper pod to reach Ready state.
+    helper_pod_timeout_seconds: int = Field(
+        default=60, alias="HELPER_POD_TIMEOUT_SECONDS"
+    )
+
+    # ── Secret migration ──────────────────────────────────────────────────────
+
+    # kubectl context of the SOURCE cluster to read secrets from.
+    # If None, the current context is used for both source and target clusters.
+    source_kube_context: Optional[str] = Field(
+        default=None, alias="SOURCE_KUBE_CONTEXT"
+    )
+    # Set to True to skip the PostgreSQL secret migration step after import.
+    skip_secret_migration: bool = Field(
+        default=False, alias="SKIP_SECRET_MIGRATION"
+    )
 
     pushgateway_url: str = Field(
         default="http://prometheus-pushgateway:9091",
@@ -278,6 +318,11 @@ def load_config() -> AppConfig:
             "PUSHGATEWAY_URL", "http://prometheus-pushgateway:9091"
         ),
         "KUBE_CONTEXT": env.get("KUBE_CONTEXT"),
+        "HELPER_POD_IMAGE": env.get("HELPER_POD_IMAGE", "debian:bookworm-slim"),
+        "SCALE_WAIT_SECONDS": env.get("SCALE_WAIT_SECONDS", "15"),
+        "HELPER_POD_TIMEOUT_SECONDS": env.get("HELPER_POD_TIMEOUT_SECONDS", "60"),
+        "SOURCE_KUBE_CONTEXT": env.get("SOURCE_KUBE_CONTEXT"),
+        "SKIP_SECRET_MIGRATION": env.get("SKIP_SECRET_MIGRATION", "false"),
     }
 
     try:

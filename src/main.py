@@ -31,6 +31,7 @@ from storage.s3 import S3StorageProvider
 from storage.azure import AzureStorageProvider
 from backup.exporter import Exporter
 from backup.importer import Importer
+from backup.secret_migrator import SecretMigrator
 from telemetry.logger import get_logger
 from telemetry.metrics import push_metrics
 
@@ -92,6 +93,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Remote object key of the archive to restore (import mode only). "
             "Example: clustersnap/backups/tenant-alpha/tenant-alpha-2026-05-17T12-00-00Z.zip"
+        ),
+    )
+    parser.add_argument(
+        "--skip-secret-migration",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip the PostgreSQL secret migration step after import. "
+            "Overrides SKIP_SECRET_MIGRATION env var."
         ),
     )
     return parser.parse_args(argv)
@@ -161,11 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         exporter = Exporter(cfg, storage)
         resolved_context = exporter.resolved_context
     else:
-        # For import mode we still want the real context in the startup log.
-        # Re-use KubectlClient's detection via a temporary Exporter instance.
-        _probe = Exporter(cfg, storage)
-        resolved_context = _probe.resolved_context
         importer = Importer(cfg, storage)
+        resolved_context = importer.resolved_context
 
     log.info(
         "ClusterSnap starting",
@@ -196,6 +203,12 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             assert importer is not None
             importer.run(remote_key=args.remote_key)
+
+            # ── Secret migration (post-import) ─────────────────────────
+            # Apply CLI flag on top of env-var config
+            if args.skip_secret_migration:
+                cfg.skip_secret_migration = True
+            SecretMigrator(cfg).run()
 
     except RuntimeError as exc:
         log.error(
