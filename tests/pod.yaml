@@ -5,7 +5,7 @@ metadata:
 spec:
   containers:
     - name: clustersnap
-      image: ghcr.io/Cosmo-Tech/clustersnap:latest
+      image: ghcr.io/cosmo-tech/clustersnap:latest
       imagePullPolicy: IfNotPresent
   imagePullSecrets:
     - name: registry-auth-clustersnap
