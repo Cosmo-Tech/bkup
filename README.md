@@ -14,9 +14,8 @@
 - 📊 **Prometheus metrics** pushed to Pushgateway after every run
 
 
-## Install from sources
-### Installation
-
+## Installation
+### Install from sources
 * create venv
   ```
   python -m .venv
@@ -91,6 +90,17 @@
     # Observability
     PUSHGATEWAY_URL=http://localhost:9091
     ```
+
+## Install locally with Docker
+* build image
+  ```
+  docker build . --tag clustersnap:local
+  ```
+
+* run image
+  ```
+  docker run clustersnap:local
+  ```
 
 ## Install on Kubernetes (pod)
 * create secret to pull image
