@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: clustersnap
+spec:
+  containers:
+    - name: clustersnap
+      image: ghcr.io/Cosmo-Tech/clustersnap:latest
+      imagePullPolicy: IfNotPresent
+  imagePullSecrets:
+    - name: registry-auth-clustersnap
