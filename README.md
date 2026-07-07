@@ -92,6 +92,21 @@
     PUSHGATEWAY_URL=http://localhost:9091
     ```
 
+## Install on Kubernetes (pod)
+* create secret to pull image
+  ```
+  kubectl create secret docker-registry registry-auth-clustersnap \
+    --docker-server=ghcr.io \
+    --docker-username=GITHUB_ACCOUNT \
+    --docker-password=GITHUB_PAT \
+    --docker-email=GITHUB_ACCOUNT
+  ```
+* create pod
+  ```
+  kubectl apply -f tests/pod.yaml -n NAMESPACE
+  ```
+
+
 # Usage
 
 tofill
