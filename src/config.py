@@ -151,7 +151,7 @@ class AppConfig(BaseModel):
     """
     Fully validated application configuration.
 
-    Instantiate via ``load_config()`` — do not build directly in production
+    Instantiate via ``load_config()`` - do not build directly in production
     code; that bypasses the env-var sourcing logic.
     """
 
@@ -199,7 +199,7 @@ class AppConfig(BaseModel):
         alias="PUSHGATEWAY_URL",
     )
 
-    # Provider-specific sub-configs — populated by the model validator below
+    # Provider-specific sub-configs - populated by the model validator below
     s3: Optional[S3Config] = Field(default=None, exclude=True)
     azure: Optional[AzureConfig] = Field(default=None, exclude=True)
 
@@ -271,7 +271,7 @@ class ConfigError(Exception):
     Raised by ``load_config()`` when one or more environment variables are
     missing, empty, or fail type/constraint validation.
 
-    The message is always human-readable and safe to log — it will never
+    The message is always human-readable and safe to log - it will never
     contain raw secret values.
     """
 
@@ -333,4 +333,4 @@ def load_config() -> AppConfig:
             f"{' -> '.join(str(l) for l in e['loc'])}: {e['msg']}"
             for e in exc.errors()
         )
-        raise ConfigError(f"Invalid configuration — {problems}") from exc
+        raise ConfigError(f"Invalid configuration - {problems}") from exc

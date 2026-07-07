@@ -14,9 +14,9 @@ For every PVC in the target namespace the engine:
 3. Checks the pod is Ready skips with a warning if not.
 4. Resolves three pieces of metadata from kubectl (exact same jsonpath
    expressions used in ``export.sh`` lines 53-55):
-   - ``container`` — first container name in the pod spec
-   - ``volume``    — volume name whose PVC claim matches the PVC
-   - ``mount``     — mountPath of that volume inside the container
+   - ``container`` - first container name in the pod spec
+   - ``volume``    - volume name whose PVC claim matches the PVC
+   - ``mount``     - mountPath of that volume inside the container
 5. Streams a tar archive out of the live container via ``kubectl exec tar``
    and captures it in memory.
 6. Packs all per-PVC ``.tar`` streams into a single timestamped ZIP archive,
@@ -27,7 +27,7 @@ For every PVC in the target namespace the engine:
 Environment variables consumed by this module
 ---------------------------------------------
 KUBE_CONTEXT   (optional) kubectl context name. Uses the current context when
-               not set — which is the in-cluster service-account context when
+               not set - which is the in-cluster service-account context when
                running as a Kubernetes CronJob.
 """
 
@@ -351,7 +351,7 @@ class KubectlClient:
             },
         )
 
-        # Stream stdout directly to file — never buffer the full tar in RAM
+        # Stream stdout directly to file - never buffer the full tar in RAM
         with dest_path.open("wb") as fh:
             result = subprocess.run(cmd, stdout=fh, stderr=subprocess.PIPE)
 
@@ -369,7 +369,7 @@ class KubectlClient:
             real_errors = "\n".join(
                 line for line in stderr_text.splitlines()
                 if _WS_NOISE not in line
-                # kubectl prefixes ws-noise lines with "E<date>" — filter those too
+                # kubectl prefixes ws-noise lines with "E<date>" - filter those too
                 and not (line.startswith("E0") and _WS_NOISE in line)
             ).strip()
 
@@ -385,7 +385,7 @@ class KubectlClient:
                     },
                 )
             else:
-                # Real failure — remove the partial file before raising
+                # Real failure - remove the partial file before raising
                 dest_path.unlink(missing_ok=True)
                 raise RuntimeError(
                     f"kubectl exec tar failed for PVC '{info.pvc}' "
@@ -552,7 +552,7 @@ class Exporter:
         Back up a single PVC to a ``.tar`` file inside ``staging_dir``.
 
         Returns the path to the written ``.tar`` file on success, or ``None``
-        when the PVC should be skipped — mirroring the ``continue`` statements
+        when the PVC should be skipped - mirroring the ``continue`` statements
         in ``export.sh``.
         """
         log.info("Exporting PVC", extra={"pvc": pvc, "namespace": self._cfg.namespace})
@@ -603,7 +603,7 @@ class Exporter:
         Each entry is named ``<pvc>.tar``, preserving the same per-PVC
         naming convention as the legacy ``export.sh`` (``$backup_dir/$pvc.tar``).
 
-        Files are read from disk via ``zf.write()`` — no tar data is buffered
+        Files are read from disk via ``zf.write()`` - no tar data is buffered
         in RAM, keeping memory usage constant regardless of PVC size.
         """
         timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")

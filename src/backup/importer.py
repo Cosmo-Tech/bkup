@@ -33,7 +33,7 @@ Workflow (mirrors the bash script exactly)
 
 Environment variables consumed
 -------------------------------
-KUBE_CONTEXT              Target cluster context (optional — default: current).
+KUBE_CONTEXT              Target cluster context (optional - default: current).
 HELPER_POD_IMAGE          Image used for helper pods (default: debian:bookworm-slim).
 SCALE_WAIT_SECONDS        Seconds to wait after scale-down (default: 15).
 HELPER_POD_TIMEOUT_SECONDS  kubectl wait timeout for helper pod Ready (default: 60).
@@ -105,7 +105,7 @@ class _ImportKubectlClient(KubectlClient):
             except RuntimeError as exc:
                 # Non-fatal: namespace may have no StatefulSets or Deployments
                 log.warning(
-                    f"Scale {kind} returned an error (may be empty) — continuing",
+                    f"Scale {kind} returned an error (may be empty) - continuing",
                     extra={"namespace": self._namespace, "error": str(exc)},
                 )
 
@@ -285,7 +285,7 @@ class _ImportKubectlClient(KubectlClient):
             if not real_errors:
                 log.warning(
                     "kubectl exec exited non-zero due to WebSocket 1006 noise "
-                    "— tar appears complete; treating as success",
+                    "- tar appears complete; treating as success",
                     extra={"pod": pod_name, "stderr": stderr_text},
                 )
             else:
@@ -449,7 +449,7 @@ class Importer:
             # Attempt to scale back up even on failure so the cluster is not
             # left with all workloads at 0 replicas
             log.error(
-                "Import workflow failed — attempting scale-up recovery",
+                "Import workflow failed - attempting scale-up recovery",
                 extra={"namespace": namespace, "error": str(exc)},
             )
             self._kubectl.scale_all(replicas=1)
@@ -505,7 +505,7 @@ class Importer:
             bad = zf.testzip()
             if bad is not None:
                 raise RuntimeError(
-                    f"ZIP archive is corrupt — first bad file: {bad!r}"
+                    f"ZIP archive is corrupt - first bad file: {bad!r}"
                 )
 
             tar_files: list[Path] = []
@@ -537,7 +537,7 @@ class Importer:
         m = _SERVICE_KEYWORD_RE.search(pvc)
         if not m:
             log.warning(
-                "PVC name does not match any known service keyword — skipping",
+                "PVC name does not match any known service keyword - skipping",
                 extra={"pvc": pvc},
             )
             return False
@@ -548,7 +548,7 @@ class Importer:
         matches = [f for f in tar_files if keyword in f.name]
         if not matches:
             log.warning(
-                "No matching tar file found for PVC — skipping",
+                "No matching tar file found for PVC - skipping",
                 extra={"pvc": pvc, "keyword": keyword},
             )
             return False
