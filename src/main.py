@@ -54,7 +54,7 @@ def run_backup_job(kubernetes: Kubernetes):
         if not targets:
             print(f"  ⚠️ No active workload config found for {pvc_name}. Skipping.")
             continue
-            
+
         target = targets[0]
         mounted_path = target['mount_path']
         resource = target['resource']
@@ -77,7 +77,7 @@ def run_backup_job(kubernetes: Kubernetes):
             kubernetes.scale_replicas(resource_type, resource_name, replicas=resource_initial_replicas)
             print(f"restored replicas of {resource} {resource_initial_replicas}")
 
-    print('')
+        print('')
 
 
 def main():

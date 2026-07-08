@@ -138,10 +138,19 @@ class Kubernetes:
         print(f"starting backup job: {job_name}")
 
 
+        # Remove existing jobs
+        try:
+            batch_api = client.BatchV1Api(self.client_corev1.api_client)
+            batch_api.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
+            time.sleep(2)
+        except ApiException as e:
+            if e.status != 404: # detect other errors that "not found"
+                print(f"error: {e}")
+
+
+        # Apply YAML template file
         project_root = Path(__file__).resolve().parents[2]
         template_path = f"{project_root}/templates/backup.job.yaml"
-        # template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup.job.yaml")
-
         try:
             with open(template_path, "r") as f:
                 yaml_content = f.read()
@@ -166,28 +175,7 @@ class Kubernetes:
             return False
 
 
-    # # Get current replicas of a given StatefulSet
-    # def get_replicas_statefulset(self, name: str) -> int:
-    #     current_ns = self.get_namespace()
-    #     try:
-    #         sts = self.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
-    #         return sts.spec.replicas
-    #     except Exception as e:
-    #         print(f"error: {e}")
-    #         return 0
-
-
-    # # Get current replicas of a given Deployment
-    # def get_replicas_deployment(self, name: str) -> int:
-    #     current_ns = self.get_namespace()
-    #     try:
-    #         deploy = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
-    #         return deploy.spec.replicas
-    #     except Exception as e:
-    #         print(f"error: {e}")
-    #         return 0
-
-    # Get replicas number of a Statefulset or Deployment
+    # Get replicas quantity of a Statefulset or Deployment
     def get_replicas(self, resource_type: str, name: str) -> int:
         current_ns = self.get_namespace()
         try:
@@ -198,14 +186,14 @@ class Kubernetes:
                 deploy = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
                 return deploy.spec.replicas
             else:
-                print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                print(f"error: unknown resource type (statefulset, deployment...)'{resource_type}'")
                 return 0
         except Exception as e:
             print(f"error: {e}")
             return 0
 
 
-    # Scale replicas number of a Statefulset or Deployment
+    # Scale replicas quantity of a Statefulset or Deployment
     def scale_replicas(self, resource_type: str, name: str, replicas: int) -> bool:
         current_ns = self.get_namespace()
         body = {"spec": {"replicas": replicas}}
@@ -218,21 +206,19 @@ class Kubernetes:
                 self.client_appsv1.patch_namespaced_deployment(name=name, namespace=current_ns, body=body)
                 return True
             else:
-                print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                print(f"error: unknown resource type (statefulset, deployment...)'{resource_type}'")
                 return False
         except Exception as e:
             print(f"error: {e}")
             return False
 
 
-
-
-
+    # Hook to ensure replicas are scaled to 0
     def wait_for_scale_down(self, resource_type: str, name: str, timeout: int = 120) -> bool:
         current_ns = self.get_namespace()
         resource = f"{resource_type}/{name}"
 
-        print(f"Waiting for {resource} to be fully stopped...")
+        print(f"waiting for {resource} to be fully stopped...")
         
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -244,17 +230,17 @@ class Kubernetes:
                     res = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
                     ready = res.status.ready_replicas
                 else:
-                    print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                    print(f"error: unknown resource type (statefulset, deployment...)'{resource_type}'")
                     return False
 
                 if ready is None or ready == 0:
                     time.sleep(3) # security timer to wait for volume detachment
-                    print(f"successful scaled replicas of {resource}")
+                    print(f"successfully stopped {resource}")
                     return True
 
             except Exception as e:
                 print(f"error: {e}")
                 return False
             
-        print(f"Timeout reached while waiting for scale down of {resource}")
+        print(f"error: timeout reached while waiting for scale down of {resource}")
         return False
