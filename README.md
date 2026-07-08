@@ -123,9 +123,15 @@
   ```
 
 
-# Usage
+## Usage
 
-tofill
+* local
+```
+python -m src.main --c CONTEXT -n NAMESPACE
+```
+
+* docker/kubernetes
+just run the image
 
 
 ## Developpers
