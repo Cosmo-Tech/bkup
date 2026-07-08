@@ -66,11 +66,11 @@
   * edit `src/templates/backup.secret.yaml` with your own config
   * apply
     ```
-    NAMESPACE=tenant-test0 envsubst < src/templates/backup.secret.yaml | kubectl apply -f -
+    NAMESPACE=tenant-test0 envsubst < templates/backup.secret.yaml | kubectl apply -f -
     ```
 * create pod
   ```
-  NAMESPACE=tenant-test0 envsubst < tests/resources.yaml | kubectl apply -f -
+  NAMESPACE=tenant-test0 envsubst < tests/resources_test.yaml | kubectl apply -f -
   ```
 
 ## Usage

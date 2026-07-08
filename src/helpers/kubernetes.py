@@ -1,7 +1,10 @@
 import os
 import psutil
-from kubernetes import client, config
+import yaml
+import time
+from kubernetes import client, config, utils
 from kubernetes.client.rest import ApiException
+from pathlib import Path
 
 class Kubernetes:
 
@@ -78,6 +81,7 @@ class Kubernetes:
         return targets
 
 
+    # Get all mounted paths in a PVC
     def _list_pvc_mount_points(self, pvc: str, pod_spec) -> list:
         results = []
         pod_volume_name = None
@@ -133,12 +137,16 @@ class Kubernetes:
         job_name = f"backup-{pvc}"[-63:].lower().strip("-")
         print(f"starting backup job: {job_name}")
 
-        template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup.job.yaml")
+
+        project_root = Path(__file__).resolve().parents[2]
+        template_path = f"{project_root}/templates/backup.job.yaml"
+        # template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup.job.yaml")
 
         try:
             with open(template_path, "r") as f:
                 yaml_content = f.read()
 
+            yaml_content = yaml_content.replace("{{ NAMESPACE }}", current_ns)
             yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
             yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc)
             yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
@@ -156,3 +164,97 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {e}")
             return False
+
+
+    # # Get current replicas of a given StatefulSet
+    # def get_replicas_statefulset(self, name: str) -> int:
+    #     current_ns = self.get_namespace()
+    #     try:
+    #         sts = self.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+    #         return sts.spec.replicas
+    #     except Exception as e:
+    #         print(f"error: {e}")
+    #         return 0
+
+
+    # # Get current replicas of a given Deployment
+    # def get_replicas_deployment(self, name: str) -> int:
+    #     current_ns = self.get_namespace()
+    #     try:
+    #         deploy = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+    #         return deploy.spec.replicas
+    #     except Exception as e:
+    #         print(f"error: {e}")
+    #         return 0
+
+    # Get replicas number of a Statefulset or Deployment
+    def get_replicas(self, resource_type: str, name: str) -> int:
+        current_ns = self.get_namespace()
+        try:
+            if resource_type.lower() == "statefulset":
+                sts = self.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+                return sts.spec.replicas
+            elif resource_type.lower() == "deployment":
+                deploy = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+                return deploy.spec.replicas
+            else:
+                print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                return 0
+        except Exception as e:
+            print(f"error: {e}")
+            return 0
+
+
+    # Scale replicas number of a Statefulset or Deployment
+    def scale_replicas(self, resource_type: str, name: str, replicas: int) -> bool:
+        current_ns = self.get_namespace()
+        body = {"spec": {"replicas": replicas}}
+        
+        try:
+            if resource_type.lower() == "statefulset":
+                self.client_appsv1.patch_namespaced_stateful_set(name=name, namespace=current_ns, body=body)
+                return True
+            elif resource_type.lower() == "deployment":
+                self.client_appsv1.patch_namespaced_deployment(name=name, namespace=current_ns, body=body)
+                return True
+            else:
+                print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                return False
+        except Exception as e:
+            print(f"error: {e}")
+            return False
+
+
+
+
+
+    def wait_for_scale_down(self, resource_type: str, name: str, timeout: int = 120) -> bool:
+        current_ns = self.get_namespace()
+        resource = f"{resource_type}/{name}"
+
+        print(f"Waiting for {resource} to be fully stopped...")
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                if resource_type.lower() == "statefulset":
+                    res = self.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+                    ready = res.status.ready_replicas
+                elif resource_type.lower() == "deployment":
+                    res = self.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+                    ready = res.status.ready_replicas
+                else:
+                    print(f"error: Unknown resource type (statefulset, deployment...)'{resource_type}'")
+                    return False
+
+                if ready is None or ready == 0:
+                    time.sleep(3) # security timer to wait for volume detachment
+                    print(f"successful scaled replicas of {resource}")
+                    return True
+
+            except Exception as e:
+                print(f"error: {e}")
+                return False
+            
+        print(f"Timeout reached while waiting for scale down of {resource}")
+        return False

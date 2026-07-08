@@ -40,11 +40,42 @@ def run_backup_job(kubernetes: Kubernetes):
     # Display the map before running the job
     get_backup_map(kubernetes)
 
+    # for pvc in kubernetes.list_pvc():
+    #     mounts = kubernetes.get_pvc(pvc['name'])
+    #     if mounts:
+    #         for m in mounts:
+    #             kubernetes.create_backup_job(pvc=pvc['name'], mounted_path=m['mount_path'])
+
+
     for pvc in kubernetes.list_pvc():
-        mounts = kubernetes.get_pvc(pvc['name'])
-        if mounts:
-            for m in mounts:
-                kubernetes.create_backup_job(pvc=pvc['name'], mounted_path=m['mount_path'])
+        pvc_name = pvc['name']
+
+        targets = kubernetes.get_pvc(pvc_name)
+        if not targets:
+            print(f"  ⚠️ No active workload config found for {pvc_name}. Skipping.")
+            continue
+            
+        target = targets[0]
+        mounted_path = target['mount_path']
+        resource = target['resource']
+        resource_type, resource_name = resource.split('/')
+        resource_initial_replicas = kubernetes.get_replicas(resource_type, resource_name)
+
+        print(f"found replicas for {resource}: {resource_initial_replicas}")
+
+        is_running = resource_initial_replicas > 0
+        if is_running:
+            kubernetes.scale_replicas(resource_type, resource_name, replicas=0)
+            if not kubernetes.wait_for_scale_down(resource_type, resource_name):
+                print(f"error: scale down fail for {resource}. Aborting backup of {pvc_name}")
+                continue 
+        else:
+            print(f"info: {resource} is already scaled down. Safe to proceed.")
+
+        job_success = kubernetes.create_backup_job(pvc=pvc_name, mounted_path=mounted_path)
+        if is_running:
+            kubernetes.scale_replicas(resource_type, resource_name, replicas=resource_initial_replicas)
+            print(f"restored replicas of {resource} {resource_initial_replicas}")
 
 
 def main():
