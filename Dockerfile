@@ -10,4 +10,4 @@ COPY src /app/src
 
 RUN pip install -r requirements.txt
 
-CMD ["python", "-m", "src.main"]
+CMD ["python", "-m", "src.main", "--job"]

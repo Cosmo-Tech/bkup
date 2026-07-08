@@ -77,6 +77,8 @@ def run_backup_job(kubernetes: Kubernetes):
             kubernetes.scale_replicas(resource_type, resource_name, replicas=resource_initial_replicas)
             print(f"restored replicas of {resource} {resource_initial_replicas}")
 
+    print('')
+
 
 def main():
     parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
