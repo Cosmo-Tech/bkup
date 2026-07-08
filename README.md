@@ -162,6 +162,9 @@ clustersnap/
 
 ### Workflow of export
 ```
+Clustersnap -> Look for existing Deployments/Statefuleset -> List attached PVC -> List volumes in each PVC
+```
+```
 CronJob trigger
      │
      ▼

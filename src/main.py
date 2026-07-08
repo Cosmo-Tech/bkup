@@ -27,26 +27,25 @@ def main():
 
     pvcs = kubernetes.list_pvc()
     if not pvcs:
-        print("No PVC found or unauthorized access.")
+        print("error: no PVC found or unauthorized access.")
         return 0
 
+    print(f"  claims:")
     for pvc in kubernetes.list_pvc():
-        print(f"  pvc:")
         print(f"    - name: {pvc['name']}")
         print(f"      status: {pvc['status']}")
         print(f"      capacity: {pvc['capacity']}")
 
-        mounts = kubernetes.get_pvc_mount_points(pvc)        
+        mounts = kubernetes.get_pvc_target_config(pvc['name'])
         if mounts:
+            print(f"      mounts:")
             for m in mounts:
-                print(f"    pods:")
-                print(f"    - name: {m['pod_name']}")
-                print(f"      containers:")
-                print(f"      - name: {m['container_name']}")
-                print(f"        mountpoints:")
-                print(f"        - name: {m['mount_path']}")
-                print(f"          readonly: {m['read_only']}")
-
+                print(f"      - container: {m['container_name']}")
+                print(f"        path: {m['mount_path']}")
+                print(f"        read_only: {m['read_only']}")
+                print(f"        resource: {m['resource']}")
+        else:
+            print(f"      mounts: {mounts}")
 
 if __name__ == "__main__":
     sys.exit(main())
