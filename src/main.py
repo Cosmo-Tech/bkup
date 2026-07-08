@@ -13,14 +13,17 @@ def main():
         args = parser.parse_args()
 
         kubernetes = Kubernetes(context=args.context, given_namespace=args.namespace)
+        print(f"context: {args.context}")
 
     # If no argument is provided = run the backup
     except:
         kubernetes = Kubernetes()
-    
+        print(f"context: local")
+
     current_ns = kubernetes.get_current_namespace()
 
-    print(f"PVC list in namespace ({current_ns}):")
+    print(f"namespaces:")
+    print(f"- name: {current_ns}")
 
     pvcs = kubernetes.list_pvc()
     if not pvcs:
@@ -28,23 +31,21 @@ def main():
         return 0
 
     for pvc in kubernetes.list_pvc():
-        print(f"pvc:")
-        print(f"  - name: {pvc['name']}")
-        print(f"    status: {pvc['status']}")
-        print(f"    capacity: {pvc['capacity']}")
+        print(f"  pvc:")
+        print(f"    - name: {pvc['name']}")
+        print(f"      status: {pvc['status']}")
+        print(f"      capacity: {pvc['capacity']}")
 
         mounts = kubernetes.get_pvc_mount_points(pvc)        
-        if not mounts:
-            print("PVC is not attached to an active pod.")
-        else:
+        if mounts:
             for m in mounts:
-                print(f"  pods:")
-                print(f"  - name: {m['pod_name']}")
-                print(f"    containers:")
-                print(f"    - name: {m['container_name']}")
-                print(f"      mountpoints:")
-                print(f"      - name: {m['mount_path']}")
-                print(f"        readonly: {m['read_only']}")
+                print(f"    pods:")
+                print(f"    - name: {m['pod_name']}")
+                print(f"      containers:")
+                print(f"      - name: {m['container_name']}")
+                print(f"        mountpoints:")
+                print(f"        - name: {m['mount_path']}")
+                print(f"          readonly: {m['read_only']}")
 
 
 if __name__ == "__main__":
