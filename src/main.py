@@ -3,25 +3,11 @@ import argparse
 from src.helpers.kubernetes import Kubernetes
 
 
-def main():
-    # # If an argument is provided = we're using from CLI
-    # try:
-    parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
-    parser.add_index = False
-    parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
-    parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace")
-    args = parser.parse_args()
+# Get a YAML map of what will be backuped
+def get_backup_map(kubernetes: Kubernetes):
+    current_ns = kubernetes.get_namespace()
 
-    kubernetes = Kubernetes(context=args.context, given_namespace=args.namespace)
-    print(f"context: {args.context}")
-
-    # # If no argument is provided = we're in Kubernetes
-    # except:
-    #     kubernetes = Kubernetes()
-    #     print(f"context: local")
-
-    current_ns = kubernetes.get_current_namespace()
-
+    print(f"context: {kubernetes.get_context()}")
     print(f"namespaces:")
     print(f"- name: {current_ns}")
 
@@ -30,6 +16,7 @@ def main():
         print("error: no PVC found or unauthorized access.")
         return 0
 
+    # Loop to display the backup map
     print(f"  claims:")
     for pvc in kubernetes.list_pvc():
         print(f"    - name: {pvc['name']}")
@@ -44,13 +31,42 @@ def main():
                 print(f"        path: {m['mount_path']}")
                 print(f"        read_only: {m['read_only']}")
                 print(f"        resource: {m['resource']}")
-
-                # volume_name_clean = print(f"{m['resource'].split("/")[1]}-{m['container_name']}-{m['mount_path'].replace('/','')}")
-                # kubernetes.create_backup_job(pvc=pvc['name'], mounted_path=m['mount_path'], volume_name=m['volume_name_clean'])
-
-                # kubernetes.create_backup_job(pvc=pvc['name'], mounted_path=m['mount_path'])
         else:
             print(f"      mounts: {mounts}")
+
+
+# Run a backup job
+def run_backup_job(kubernetes: Kubernetes):
+    # Display the map before running the job
+    get_backup_map(kubernetes)
+
+    for pvc in kubernetes.list_pvc():
+        mounts = kubernetes.get_pvc(pvc['name'])
+        if mounts:
+            for m in mounts:
+                kubernetes.create_backup_job(pvc=pvc['name'], mounted_path=m['mount_path'])
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
+    parser.add_index = False
+    parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
+    parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace")
+    parser.add_argument("-j", "--job", action="store_true", help="Run a backup job")
+    parser.add_argument("-m", "--map", action="store_true", help="Get the backup map")
+    args = parser.parse_args()
+
+    kubernetes = Kubernetes(context=args.context, namespace=args.namespace)
+    
+    if args.job:
+        run_backup_job(kubernetes)
+
+    elif args.map:
+        get_backup_map(kubernetes)
+
+    else:
+        print('please run with --job or --map (--help for more info)')
+
 
 if __name__ == "__main__":
     sys.exit(main())

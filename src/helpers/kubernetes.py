@@ -5,8 +5,9 @@ from kubernetes.client.rest import ApiException
 
 class Kubernetes:
 
-    def __init__(self, context: str = None, given_namespace: str = None):
-        self.given_namespace = given_namespace
+    def __init__(self, context: str, namespace: str):
+        self.context = context
+        self.namespace = namespace
         try:
             # Connect from CLI (based on kubeconfig)
             if context:
@@ -22,21 +23,18 @@ class Kubernetes:
             print(f"error: {e}")
 
 
-    def get_current_namespace(self) -> str:
-        # Use namespace if given from args
-        if self.given_namespace:
-            return self.given_namespace
+    def get_context(self) -> str:
+        if self.context:
+            return self.context
 
-        # Or fallback on current namespace if running in a pod
-        ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-        if os.path.exists(ns_path):
-            with open(ns_path, "r") as f:
-                return f.read().strip()
-        return "default"
+
+    def get_namespace(self) -> str:
+        if self.namespace:
+            return self.namespace
 
 
     def list_pvc(self) -> list:
-        current_ns = self.get_current_namespace()
+        current_ns = self.get_namespace()
         pvc_list = []
         try:
             response = self.client_corev1.list_namespaced_persistent_volume_claim(namespace=current_ns)
@@ -54,7 +52,7 @@ class Kubernetes:
 
     # Look for PVC from Deployments and StatefulSets
     def get_pvc(self, pvc: str) -> list:
-        current_ns = self.get_current_namespace()
+        current_ns = self.get_namespace()
         targets = []
 
         try:
@@ -110,15 +108,32 @@ class Kubernetes:
         return results
 
 
+    # Check if a secret exists in a namespace
+    def check_secret_exists(self, secret: str) -> bool:
+        current_ns = self.get_namespace()
+        try:
+            self.client_corev1.read_namespaced_secret(name=secret, namespace=current_ns)
+            return True
+        except Exception as e:
+            if e.status == 404:
+                return False
+            print(f"error: {e}")
+            return False
 
 
     def create_backup_job(self, pvc: str, mounted_path: str) -> bool:
-        current_ns = self.get_current_namespace()
-        
+        current_ns = self.get_namespace()
+
+        # Ensure secret clustersnap-config exists. It must contains the remote storage access
+        secret_required = "clustersnap-config"
+        if not self.check_secret_exists(secret_required):
+            print(f"error: Secret '{secret_required}' is missing in namespace '{current_ns}'. Cancelling backup job.")
+            return False
+
         job_name = f"backup-{pvc}"[-63:].lower().strip("-")
         print(f"starting backup job: {job_name}")
 
-        template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup-job.yaml")
+        template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup.job.yaml")
 
         try:
             with open(template_path, "r") as f:
