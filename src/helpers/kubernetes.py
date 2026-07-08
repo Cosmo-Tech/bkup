@@ -52,8 +52,8 @@ class Kubernetes:
             return []
 
 
-    # Look for PVC in Deployments and StatefulSets
-    def get_pvc_target_config(self, pvc: str) -> list:
+    # Look for PVC from Deployments and StatefulSets
+    def get_pvc(self, pvc: str) -> list:
         current_ns = self.get_current_namespace()
         targets = []
 
@@ -96,7 +96,7 @@ class Kubernetes:
         if not pod_volume_name:
             return results
 
-        # Get mount path
+        # Get volumes info
         for container in pod_spec.containers:
             if hasattr(container, 'volume_mounts') and container.volume_mounts:
                 for mount in container.volume_mounts:
@@ -109,3 +109,35 @@ class Kubernetes:
 
         return results
 
+
+
+
+    def create_backup_job(self, pvc: str, mounted_path: str) -> bool:
+        current_ns = self.get_current_namespace()
+        
+        job_name = f"backup-{pvc}"[-63:].lower().strip("-")
+        print(f"starting backup job: {job_name}")
+
+        template_path = os.path.join(os.path.dirname(__file__), "../..", "templates", "backup-job.yaml")
+
+        try:
+            with open(template_path, "r") as f:
+                yaml_content = f.read()
+
+            yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
+            yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc)
+            yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
+
+            job_dict = yaml.safe_load(yaml_content)
+
+            if "metadata" not in job_dict:
+                job_dict["metadata"] = {}
+            job_dict["metadata"]["namespace"] = current_ns
+
+            utils.create_from_dict(self.client_corev1.api_client, data=job_dict)
+
+            return True
+
+        except Exception as e:
+            print(f"error: {e}")
+            return False

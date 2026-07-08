@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: backup-worker
+          image: ghcr.io/cosmo-tech/clustersnap:latest
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: volume-to-backup
+              mountPath: "{{ MOUNTED_PATH }}"
+              readOnly: true
+          env:
+            - name: STORAGE_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-address
+            - name: STORAGE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-username
+            - name: STORAGE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-password
+      volumes:
+        - name: volume-to-backup
+          persistentVolumeClaim:
+            claimName: "{{ PVC_NAME }}"
