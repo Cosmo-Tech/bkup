@@ -88,29 +88,10 @@ just run the image
 ```
 clustersnap/
 ├── src/
-│   ├── main.py               # CLI entrypoint (--mode export | import)
-│   ├── config.py             # Pydantic v2 environment validation
-│   ├── storage/
-│   │   ├── base.py           # Abstract BaseStorageProvider
-│   │   ├── s3.py             # AWS S3 / MinIO / SeaweedFS
-│   │   └── azure.py          # Azure Blob Storage (shared-key + SP)
-│   ├── backup/
-│   │   ├── exporter.py       # Zip → Upload → Cleanup
-│   │   └── importer.py       # Download → Validate → Extract
-│   └── telemetry/
-│       ├── logger.py         # JSON formatter for Grafana Loki
-│       └── metrics.py        # Prometheus counters, histograms, gauges
-├── deploy/
-│   └── clustersnap/          # Helm chart
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       └── templates/
-│           ├── configmap.yaml
-│           ├── secret.yaml
-│           └── cronjob.yaml
-├── Dockerfile
-├── requirements.txt
-└── README.md
+│   ├── main.py               # Entrypoint for CLI & Kubernetes main pod
+│   ├── worker.py             # Entrypoint for Kubernetes job pods
+│   └── helpers/
+│       ├── kubernetes.py     # Kubernetes class
 ```
 
 ### Workflow of export

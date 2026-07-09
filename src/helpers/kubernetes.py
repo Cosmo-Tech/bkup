@@ -134,7 +134,7 @@ class Kubernetes:
             self.client_corev1.read_namespaced_secret(name=secret, namespace=current_ns)
             return True
         except Exception as e:
-            if e.status == 404:
+            if hasattr(e, 'status') and e.status == 404:
                 return False
             print(f"error: {e}")
             return False
@@ -154,16 +154,6 @@ class Kubernetes:
 
         job_name = f"backup-{pvc_name}"[-63:].lower().strip("-")
         print(f"starting backup job: {job_name}")
-
-
-        # Remove existing jobs
-        try:
-            batch_api = client.BatchV1Api(self.client_corev1.api_client)
-            batch_api.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
-            time.sleep(2)
-        except ApiException as e:
-            if e.status != 404: # detect other errors that "not found"
-                print(f"error: {e}")
 
 
         # Apply YAML template file
@@ -203,7 +193,7 @@ class Kubernetes:
         try:
             batch_api = client.BatchV1Api(self.client_corev1.api_client)
             batch_api.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
-            print(f"  🧹 Old job '{job_name}' successfully removed.")
+            print(f"  Old job '{job_name}' successfully removed.")
             return True
         except ApiException as e:
             if e.status == 404:
@@ -219,10 +209,8 @@ class Kubernetes:
         current_ns = self.get_namespace()
         batch_api = client.BatchV1Api(self.client_corev1.api_client)
         
-        # On construit la liste des noms de jobs qu'on attend de voir disparaître
         jobs_to_wait = [f"backup-{pvc}"[-63:].lower().strip("-") for pvc in pvc_names]
-        
-        print(f"  ⏳ Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
+        print(f"  Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
         
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -230,33 +218,30 @@ class Kubernetes:
             
             for job_name in jobs_to_wait:
                 try:
-                    # On tente de lire le job
                     batch_api.read_namespaced_job(name=job_name, namespace=current_ns)
-                    # Si on arrive ici, c'est que le job existe encore sur le cluster
                     active_jobs.append(job_name)
                 except ApiException as e:
                     if e.status == 404:
-                        # Le job est bien supprimé, on ne fait rien
                         continue
                     else:
-                        print(f"\n  ❌ Error checking job {job_name}: {e}")
+                        print(f"\n  error: checking job {job_name}: {e}")
                         return False
 
-            # Si la liste des jobs encore actifs est vide, c'est qu'ils ont tous disparu !
             if not active_jobs:
-                print(" Done! 🟢")
+                print(" Done!")
                 return True
                 
             print(".", end="", flush=True)
-            time.sleep(2) # On réinterroge toutes les 2 secondes
+            time.sleep(2)
             
-        print("\n  ❌ Timeout reached while waiting for old jobs deletion.")
+        print("\n  error: timeout reached while waiting for old jobs deletion.")
         return False
 
 
-
-    # Get replicas quantity of a Statefulset or Deployment
     def get_replicas(self, resource_type: str, name: str) -> int:
+        """
+        Get replicas quantity of a Statefulset or Deployment
+        """
         current_ns = self.get_namespace()
         try:
             if resource_type.lower() == "statefulset":
@@ -273,8 +258,10 @@ class Kubernetes:
             return 0
 
 
-    # Scale replicas quantity of a Statefulset or Deployment
     def scale_replicas(self, resource_type: str, name: str, replicas: int) -> bool:
+        """
+        Scale replicas quantity of a Statefulset or Deployment
+        """
         current_ns = self.get_namespace()
         body = {"spec": {"replicas": replicas}}
         
@@ -293,8 +280,10 @@ class Kubernetes:
             return False
 
 
-    # Hook to ensure replicas are scaled to 0
     def wait_for_scale_down(self, resource_type: str, name: str, timeout: int = 120) -> bool:
+        """
+        Hook to ensure replicas are scaled to 0
+        """
         current_ns = self.get_namespace()
         resource = f"{resource_type}/{name}"
 
