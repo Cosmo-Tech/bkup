@@ -1,0 +1,125 @@
+import yaml
+import time
+from pathlib import Path
+from kubernetes import utils, client
+from kubernetes.client.rest import ApiException
+
+
+def get_job_name(k8s, pvc_name: str) -> str:
+    """Automatic name for backup jobs (63 chars limited)"""
+    return f"backup-{pvc_name}"[-63:].lower().strip("-")
+
+
+def create_backup_job(k8s, pvc_name: str, mounted_path: str) -> bool:
+    """Create a Kubernetes job to run backups"""
+
+    current_ns = k8s.get_namespace()
+
+    secret_required = "clustersnap-config"
+    if not k8s.check_secret_exists(secret_required):
+        print(f"error: Secret '{secret_required}' is missing in namespace '{current_ns}'. Cancelling backup job.")
+        return False
+
+    job_name = k8s.get_job_name(pvc_name)
+    print(f"starting backup job: {job_name}")
+
+    project_root = Path(__file__).resolve().parents[2]
+    template_path = f"{project_root}/templates/backup.job.yaml"
+    try:
+        with open(template_path, "r") as f:
+            yaml_content = f.read()
+
+        yaml_content = yaml_content.replace("{{ NAMESPACE }}", current_ns)
+        yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
+        yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc_name)
+        yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
+
+        job_dict = yaml.safe_load(yaml_content)
+
+        if "metadata" not in job_dict:
+            job_dict["metadata"] = {}
+        job_dict["metadata"]["namespace"] = current_ns
+
+        utils.create_from_dict(k8s.client_corev1.api_client, data=job_dict)
+        return True
+    except Exception as e:
+        print(f"error: {e}")
+        return False
+
+
+def delete_backup_job(k8s, pvc_name: str) -> bool:
+    """Delete a Kubernetes backup job"""
+
+    current_ns = k8s.get_namespace()
+
+    job_name = k8s.get_job_name(pvc_name)
+    try:
+        k8s.client_batchv1.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
+        print(f"  Old job '{job_name}' successfully removed.")
+        return True
+    except ApiException as e:
+        if e.status == 404:
+            return True
+        print(f"error: deleting job {job_name}: {e}")
+        return False
+
+
+def wait_for_jobs_deletion(k8s, pvc_list: list) -> bool:
+    """Hook to wait for a job to be deleted"""
+
+    current_ns = k8s.get_namespace()
+
+    jobs_to_wait = [get_job_name(k8s, pvc) for pvc in pvc_list]
+    print(f"  Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
+    
+    start_time = time.time()
+    timeout = 60
+    while time.time() - start_time < timeout:
+        active_jobs = []
+        for job_name in jobs_to_wait:
+            try:
+                k8s.client_batchv1.read_namespaced_job(name=job_name, namespace=current_ns)
+                active_jobs.append(job_name)
+            except ApiException as e:
+                if e.status == 404:
+                    continue
+                else:
+                    print(f"\n  error: checking job {job_name}: {e}")
+                    return False
+
+        if not active_jobs:
+            print(" Done!")
+            return True
+        print(".", end="", flush=True)
+        time.sleep(2)
+    print("\n  error: timeout reached while waiting for old jobs deletion.")
+    return False
+
+
+def wait_for_job_completion(k8s, job_name: str) -> bool:
+    """Blocks the execution until the Kubernetes Job is either Succeeded or Failed."""
+
+    print(f"info: waiting for job '{job_name}' to complete...", flush=True)
+    start_time = time.time()        
+    while True:
+        timeout = 1800
+        if (time.time() - start_time) > timeout:
+            print(f"error: timeout reached ({timeout}s) while waiting for job '{job_name}'.")
+            return False
+        try:
+            job = k8s.client_batchv1.read_namespaced_job_status(name=job_name, namespace=k8s.namespace)
+            status = job.status
+
+            if status.succeeded and status.succeeded > 0:
+                print(f"info: job '{job_name}' completed successfully.", flush=True)
+                return True
+
+            if status.failed and status.failed > 0:
+                print(f"error: job '{job_name}' failed during execution.", flush=True)
+                return False
+
+            print(f"info: job is still running (active pods: {status.active or 0}). checking again in 10s...", flush=True)
+            time.sleep(10)
+        except ApiException as e:
+            print(f"error: failed to read job status: {e}", flush=True)
+            time.sleep(10)

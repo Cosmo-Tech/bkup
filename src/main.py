@@ -1,7 +1,40 @@
 import sys
 import argparse
 import time
-from src.helpers.kubernetes import Kubernetes
+import signal
+from src.kubernetes import Kubernetes
+
+
+
+
+# Global dictionary to keep track of initial states across functions
+backup_workloads = {}
+kubernetes_client = None
+
+def restore_production_on_signal(signum, frame):
+    """
+    Emergency signal handler. Triggers an immediate rollback to initial 
+    replica states if the orchestrator is interrupted (CTRL+C or SIGTERM).
+    """
+    print(f"\nwarn: termination signal ({signum}) received! starting emergency rollback...", flush=True)
+    
+    if not backup_workloads or not kubernetes_client:
+        print("info: no workload state captured yet. exiting safely.", flush=True)
+        sys.exit(0)
+
+    # Emergency loop to bring everything back up
+    for resource_key, info in backup_workloads.items():
+        if info["initial_replicas"] > 0:
+            print(f"  info: emergency restoring {resource_key} to {info['initial_replicas']} replicas...", flush=True)
+            kubernetes_client.scale_replicas(
+                info["resource_type"], 
+                info["resource_name"], 
+                replicas=info["initial_replicas"]
+            )
+            
+    print("info: emergency rollback finished. exiting.", flush=True)
+    sys.exit(1)
+
 
 
 def get_backup_map(kubernetes: Kubernetes):
@@ -54,21 +87,21 @@ def run_backup_job(kubernetes: Kubernetes):
         return
 
     print(f"\n==================================================")
-    print(f"Starting Sequential Backup Orchestration for {len(pvcs)} PVCs")
+    print(f"Starting Backups ")
     print(f"==================================================")
 
     # ==================================================
     # PHASE 0 : GLOBAL JOB CLEANUP
     # ==================================================
     print("\nPHASE 0: Purging any existing/stale backup jobs...")
-    pvc_names = []
+    pvc_list = []
     
     for pvc in pvcs:
         pvc_name = pvc['name']
-        pvc_names.append(pvc_name)
+        pvc_list.append(pvc_name)
         kubernetes.delete_backup_job(pvc_name=pvc_name)
     
-    if not kubernetes.wait_for_jobs_deletion(pvc_names=pvc_names, timeout=45):
+    if not kubernetes.wait_for_jobs_deletion(pvc_list=pvc_list):
         print("  warn: Some old jobs might still be terminating. Proceeding anyway...")
 
     backup_workloads = {}
@@ -120,8 +153,9 @@ def run_backup_job(kubernetes: Kubernetes):
     for resource_key, info in backup_workloads.items():
         kubernetes.create_backup_job(pvc_name=info["pvc_name"], mounted_path=info["mounted_path"])
 
-    print("  info: Allowing a 5s safety buffer for backup containers to initialize...")
-    time.sleep(5)
+    # Wait for backup to end before scale back replicas
+    kubernetes.wait_for_job_completion(job_name=kubernetes.get_job_name(pvc_name))
+
 
     # ==================================================
     # PHASE 4 : PRODUCTION WORKLOAD RESTORATION
@@ -142,6 +176,14 @@ def run_backup_job(kubernetes: Kubernetes):
 
 
 def main():
+    global kubernetes_client
+    
+    # SIGINT = CTRL+C (CLI)
+    signal.signal(signal.SIGINT, restore_production_on_signal)
+
+    # SIGTERM = Kubernetes Pod killed
+    signal.signal(signal.SIGTERM, restore_production_on_signal)
+
     parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace")
