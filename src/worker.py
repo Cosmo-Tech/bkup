@@ -53,7 +53,8 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
-
+    # kube = Kubernetes(context=None, namespace=None)
+    kube = Kubernetes()
 
     # ------------------------------
     # STORAGE PROVIDER DETECTION
