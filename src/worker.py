@@ -5,6 +5,7 @@ import tarfile
 import io
 
 from src.storage.azure import AzureStorage
+from src.kubernetes import Kubernetes
 
 
 class TarGenerator:
