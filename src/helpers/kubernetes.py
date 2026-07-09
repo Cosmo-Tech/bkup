@@ -27,16 +27,25 @@ class Kubernetes:
 
 
     def get_context(self) -> str:
+        """
+        Get the current context
+        """
         if self.context:
             return self.context
 
 
     def get_namespace(self) -> str:
+        """
+        Get the current namespace
+        """
         if self.namespace:
             return self.namespace
 
 
     def list_pvc(self) -> list:
+        """
+        List all PVC of a namespace
+        """
         current_ns = self.get_namespace()
         pvc_list = []
         try:
@@ -53,8 +62,10 @@ class Kubernetes:
             return []
 
 
-    # Look for PVC from Deployments and StatefulSets
-    def get_pvc(self, pvc: str) -> list:
+    def get_pvc(self, pvc_name: str) -> list:
+        """
+        Look for PVC from Deployments and StatefulSets
+        """
         current_ns = self.get_namespace()
         targets = []
 
@@ -62,7 +73,7 @@ class Kubernetes:
             # Deployments
             deployments = self.client_appsv1.list_namespaced_deployment(namespace=current_ns)
             for d in deployments.items:
-                mounts = self._list_pvc_mount_points(pvc, d.spec.template.spec)
+                mounts = self._list_pvc_mount_points(pvc_name, d.spec.template.spec)
                 for m in mounts:
                     m["resource"] = f"Deployment/{d.metadata.name}"
                     targets.append(m)
@@ -70,7 +81,7 @@ class Kubernetes:
             # StatefulSets
             statefulsets = self.client_appsv1.list_namespaced_stateful_set(namespace=current_ns)
             for s in statefulsets.items:
-                mounts = self._list_pvc_mount_points(pvc, s.spec.template.spec)
+                mounts = self._list_pvc_mount_points(pvc_name, s.spec.template.spec)
                 for m in mounts:
                     m["resource"] = f"StatefulSet/{s.metadata.name}"
                     targets.append(m)
@@ -81,8 +92,10 @@ class Kubernetes:
         return targets
 
 
-    # Get all mounted paths in a PVC
-    def _list_pvc_mount_points(self, pvc: str, pod_spec) -> list:
+    def _list_pvc_mount_points(self, pvc_name: str, pod_spec) -> list:
+        """
+        Get all mounted paths in a PVC
+        """
         results = []
         pod_volume_name = None
 
@@ -91,7 +104,7 @@ class Kubernetes:
 
         # Get volume name
         for vol in pod_spec.volumes:
-            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc:
+            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
                 pod_volume_name = vol.name
                 break
 
@@ -112,8 +125,10 @@ class Kubernetes:
         return results
 
 
-    # Check if a secret exists in a namespace
     def check_secret_exists(self, secret: str) -> bool:
+        """
+        Check if a secret exists in a namespace
+        """
         current_ns = self.get_namespace()
         try:
             self.client_corev1.read_namespaced_secret(name=secret, namespace=current_ns)
@@ -125,7 +140,10 @@ class Kubernetes:
             return False
 
 
-    def create_backup_job(self, pvc: str, mounted_path: str) -> bool:
+    def create_backup_job(self, pvc_name: str, mounted_path: str) -> bool:
+        """
+        Create a Kubernetes job to run backups
+        """
         current_ns = self.get_namespace()
 
         # Ensure secret clustersnap-config exists. It must contains the remote storage access
@@ -134,7 +152,7 @@ class Kubernetes:
             print(f"error: Secret '{secret_required}' is missing in namespace '{current_ns}'. Cancelling backup job.")
             return False
 
-        job_name = f"backup-{pvc}"[-63:].lower().strip("-")
+        job_name = f"backup-{pvc_name}"[-63:].lower().strip("-")
         print(f"starting backup job: {job_name}")
 
 
@@ -157,7 +175,7 @@ class Kubernetes:
 
             yaml_content = yaml_content.replace("{{ NAMESPACE }}", current_ns)
             yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
-            yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc)
+            yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc_name)
             yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
 
             job_dict = yaml.safe_load(yaml_content)
@@ -173,6 +191,68 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {e}")
             return False
+
+
+    def delete_backup_job(self, pvc_name: str) -> bool:
+        """
+        Delete a Kubernetes backup job
+        """
+        current_ns = self.get_namespace()
+        job_name = f"backup-{pvc_name}"[-63:].lower().strip("-")
+        
+        try:
+            batch_api = client.BatchV1Api(self.client_corev1.api_client)
+            batch_api.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
+            print(f"  🧹 Old job '{job_name}' successfully removed.")
+            return True
+        except ApiException as e:
+            if e.status == 404:
+                return True
+            print(f"error: deleting job {job_name}: {e}")
+            return False
+
+
+    def wait_for_jobs_deletion(self, pvc_names: list, timeout: int = 60) -> bool:
+        """
+        Hook to wait for a job to be deleted
+        """
+        current_ns = self.get_namespace()
+        batch_api = client.BatchV1Api(self.client_corev1.api_client)
+        
+        # On construit la liste des noms de jobs qu'on attend de voir disparaître
+        jobs_to_wait = [f"backup-{pvc}"[-63:].lower().strip("-") for pvc in pvc_names]
+        
+        print(f"  ⏳ Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            active_jobs = []
+            
+            for job_name in jobs_to_wait:
+                try:
+                    # On tente de lire le job
+                    batch_api.read_namespaced_job(name=job_name, namespace=current_ns)
+                    # Si on arrive ici, c'est que le job existe encore sur le cluster
+                    active_jobs.append(job_name)
+                except ApiException as e:
+                    if e.status == 404:
+                        # Le job est bien supprimé, on ne fait rien
+                        continue
+                    else:
+                        print(f"\n  ❌ Error checking job {job_name}: {e}")
+                        return False
+
+            # Si la liste des jobs encore actifs est vide, c'est qu'ils ont tous disparu !
+            if not active_jobs:
+                print(" Done! 🟢")
+                return True
+                
+            print(".", end="", flush=True)
+            time.sleep(2) # On réinterroge toutes les 2 secondes
+            
+        print("\n  ❌ Timeout reached while waiting for old jobs deletion.")
+        return False
+
 
 
     # Get replicas quantity of a Statefulset or Deployment
