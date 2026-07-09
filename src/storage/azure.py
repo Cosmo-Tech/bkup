@@ -18,11 +18,19 @@ class AzureStorage(BaseStorage):
 
         self.account_key = storage_password
         
-        # Dynamic container naming
-        cluster_name = os.getenv("CLUSTER_NAME", "kob-dev")
-        namespace = os.getenv("NAMESPACE", storage_username)
-        self.container_name = f"{cluster_name}-{namespace}".lower().replace("_", "-")
-        
+        namespace = "unknown-namespace"
+        ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+        if os.path.exists(ns_path):
+            with open(ns_path, "r") as f:
+                namespace = f.read().strip()
+
+        cluster_name = os.getenv("CLUSTER_NAME")
+        if not cluster_name:
+            account_name = self.account_url.replace("https://", "").replace("http://", "").split(".")[0]
+            cluster_name = account_name.replace("-backup", "").replace("backup", "")
+
+        self.blob_container = f"{cluster_name}-{namespace}".lower().replace("_", "-")
+
         self.blob_service_client = BlobServiceClient(
             account_url=self.account_url,
             credential=self.account_key
@@ -35,11 +43,11 @@ class AzureStorage(BaseStorage):
         Creates the Azure container if it does not exist.
         """
         try:
-            print(f"info: checking or creating Azure container '{self.container_name}'...", flush=True)
-            self.blob_service_client.create_container(name=self.container_name)
-            print(f"info: container '{self.container_name}' successfully created.", flush=True)
+            print(f"info: checking or creating Azure container '{self.blob_container}'...", flush=True)
+            self.blob_service_client.create_container(name=self.blob_container)
+            print(f"info: container '{self.blob_container}' successfully created.", flush=True)
         except ResourceExistsError:
-            print(f"info: container '{self.container_name}' already exists. Reusing it.", flush=True)
+            print(f"info: container '{self.blob_container}' already exists. Reusing it.", flush=True)
         except Exception as e:
             print(f"error: failed to verify/create Azure container: {e}", flush=True)
 
@@ -51,7 +59,7 @@ class AzureStorage(BaseStorage):
 
         try:
             blob_client = self.blob_service_client.get_blob_client(
-                container=self.container_name, 
+                container=self.blob_container, 
                 blob=blob_name
             )
             
