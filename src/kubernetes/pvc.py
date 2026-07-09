@@ -1,12 +1,12 @@
 import time
 
 
-def list_pvc(k8s) -> list:
+def list_pvc(kube) -> list:
     """List all PVC of a namespace"""
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
     pvc_list = []
     try:
-        response = k8s.client_corev1.list_namespaced_persistent_volume_claim(namespace=current_ns)
+        response = kube.client_corev1.list_namespaced_persistent_volume_claim(namespace=current_ns)
         for pvc in response.items:
             pvc_list.append({
                 "name": pvc.metadata.name,
@@ -19,23 +19,23 @@ def list_pvc(k8s) -> list:
         return []
 
 
-def get_pvc(k8s, pvc_name: str) -> list:
+def get_pvc(kube, pvc_name: str) -> list:
     """Look for PVC from Deployments and StatefulSets"""
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
     targets = []
     try:
         # Deployments
-        deployments = k8s.client_appsv1.list_namespaced_deployment(namespace=current_ns)
+        deployments = kube.client_appsv1.list_namespaced_deployment(namespace=current_ns)
         for d in deployments.items:
-            mounts = k8s._list_pvc_mount_points(pvc_name, d.spec.template.spec)
+            mounts = _list_pvc_mount_points(pvc_name, d.spec.template.spec)
             for m in mounts:
                 m["resource"] = f"Deployment/{d.metadata.name}"
                 targets.append(m)
 
         # StatefulSets
-        statefulsets = k8s.client_appsv1.list_namespaced_stateful_set(namespace=current_ns)
+        statefulsets = kube.client_appsv1.list_namespaced_stateful_set(namespace=current_ns)
         for s in statefulsets.items:
-            mounts = k8s._list_pvc_mount_points(pvc_name, s.spec.template.spec)
+            mounts = _list_pvc_mount_points(pvc_name, s.spec.template.spec)
             for m in mounts:
                 m["resource"] = f"StatefulSet/{s.metadata.name}"
                 targets.append(m)
@@ -44,7 +44,7 @@ def get_pvc(k8s, pvc_name: str) -> list:
     return targets
 
 
-def _list_pvc_mount_points(k8s, pvc_name: str, pod_spec) -> list:
+def _list_pvc_mount_points(pvc_name: str, pod_spec) -> list:
     """Get all mounted paths in a PVC"""
     results = []
     pod_volume_name = None
@@ -72,15 +72,15 @@ def _list_pvc_mount_points(k8s, pvc_name: str, pod_spec) -> list:
     return results
 
 
-def get_replicas(k8s, resource_type: str, name: str) -> int:
+def get_replicas(kube, resource_type: str, name: str) -> int:
     """Get replicas quantity of a Statefulset or Deployment"""
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
     try:
         if resource_type.lower() == "statefulset":
-            sts = k8s.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+            sts = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
             return sts.spec.replicas
         elif resource_type.lower() == "deployment":
-            deploy = k8s.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+            deploy = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
             return deploy.spec.replicas
         else:
             print(f"error: unknown resource type '{resource_type}'")
@@ -90,16 +90,16 @@ def get_replicas(k8s, resource_type: str, name: str) -> int:
         return 0
 
 
-def scale_replicas(k8s, resource_type: str, name: str, replicas: int) -> bool:
+def scale_replicas(kube, resource_type: str, name: str, replicas: int) -> bool:
     """Scale replicas quantity of a Statefulset or Deployment"""
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
     body = {"spec": {"replicas": replicas}}
     try:
         if resource_type.lower() == "statefulset":
-            k8s.client_appsv1.patch_namespaced_stateful_set(name=name, namespace=current_ns, body=body)
+            kube.client_appsv1.patch_namespaced_stateful_set(name=name, namespace=current_ns, body=body)
             return True
         elif resource_type.lower() == "deployment":
-            k8s.client_appsv1.patch_namespaced_deployment(name=name, namespace=current_ns, body=body)
+            kube.client_appsv1.patch_namespaced_deployment(name=name, namespace=current_ns, body=body)
             return True
         else:
             print(f"error: unknown resource type '{resource_type}'")
@@ -109,9 +109,9 @@ def scale_replicas(k8s, resource_type: str, name: str, replicas: int) -> bool:
         return False
 
 
-def wait_for_scale_down(k8s, resource_type: str, name: str, timeout: int = 120) -> bool:
+def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120) -> bool:
     """Blocks the execution until replicas are scaled to 0"""
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
     
     resource = f"{resource_type}/{name}"
     print(f"waiting for {resource} to be fully stopped...")
@@ -120,9 +120,9 @@ def wait_for_scale_down(k8s, resource_type: str, name: str, timeout: int = 120) 
     while time.time() - start_time < timeout:
         try:
             if resource_type.lower() == "statefulset":
-                res = k8s.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+                res = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
             elif resource_type.lower() == "deployment":
-                res = k8s.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+                res = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
             else:
                 print(f"error: unknown resource type '{resource_type}'")
                 return False
@@ -137,3 +137,59 @@ def wait_for_scale_down(k8s, resource_type: str, name: str, timeout: int = 120) 
             return False
     print(f"error: timeout reached while waiting for scale down of {resource}")
     return False
+
+
+def get_node_name(kube, pvc_name: str) -> str:
+    """Get node name where the PVC is attached."""
+    current_ns = kube.get_namespace()
+    try:
+        # get PV name from the PVC
+        pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=current_ns)
+        pv_name = pvc_info.spec.volume_name
+        if not pv_name:
+            return None
+
+        # STRATEGY 1 : Try to get from VolumeAttachment
+        try:
+            attachments = kube.client_corev1.api_client.call_api(
+                '/api/v1/storage.k8s.io/v1/volumeattachments',
+                'GET',
+                auth_settings=['BearerToken'],
+                response_type='object'
+            )[0]
+            if attachments and 'items' in attachments:
+                for item in attachments['items']:
+                    spec = item.get('spec', {})
+                    if spec.get('volumeName') == pv_name:
+                        node = spec.get('nodeName')
+                        if node:
+                            print(f"found node from VolumeAttachment : {node}")
+                            return node
+        except Exception as e:
+            pass
+
+        # STRATEGY 2 : Try to get from PV
+        pv_info = kube.client_corev1.read_persistent_volume(name=pv_name)
+        if pv_info.spec.node_affinity and pv_info.spec.node_affinity.required:
+            node_terms = pv_info.spec.node_affinity.required.node_selector_terms
+            for term in node_terms:
+                for expr in term.match_expressions:
+                    if expr.key == "kubernetes.io/hostname" and expr.values:
+                        print(f"found node from PV NodeAffinity : {expr.values[0]}")
+                        return expr.values[0]
+
+        # STRATEGY 3 : Try to get from Pod
+        pods = kube.client_corev1.list_namespaced_pod(namespace=current_ns)
+        for pod in pods.items:
+            if pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                        if pod.spec.node_name:
+                            print(f"found node from Pod {pod.metadata.name} : {pod.spec.node_name}")
+                            return pod.spec.node_name
+
+    except Exception as e:
+        print(f"error dans get_node_name: {e}")
+
+    # Return none in case node not found
+    return None

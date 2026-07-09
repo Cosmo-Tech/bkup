@@ -5,22 +5,22 @@ from kubernetes import utils, client
 from kubernetes.client.rest import ApiException
 
 
-def get_job_name(k8s, pvc_name: str) -> str:
+def get_job_name(kube, pvc_name: str) -> str:
     """Automatic name for backup jobs (63 chars limited)"""
     return f"backup-{pvc_name}"[-63:].lower().strip("-")
 
 
-def create_backup_job(k8s, pvc_name: str, mounted_path: str) -> bool:
+def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) -> bool:
     """Create a Kubernetes job to run backups"""
 
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
 
     secret_required = "clustersnap-config"
-    if not k8s.check_secret_exists(secret_required):
+    if not kube.check_secret_exists(secret_required):
         print(f"error: Secret '{secret_required}' is missing in namespace '{current_ns}'. Cancelling backup job.")
         return False
 
-    job_name = k8s.get_job_name(pvc_name)
+    job_name = kube.get_job_name(pvc_name)
     print(f"starting backup job: {job_name}")
 
     project_root = Path(__file__).resolve().parents[2]
@@ -33,6 +33,7 @@ def create_backup_job(k8s, pvc_name: str, mounted_path: str) -> bool:
         yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
         yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc_name)
         yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
+        yaml_content = yaml_content.replace("{{ NODE_NAME }}", node_name)
 
         job_dict = yaml.safe_load(yaml_content)
 
@@ -40,21 +41,21 @@ def create_backup_job(k8s, pvc_name: str, mounted_path: str) -> bool:
             job_dict["metadata"] = {}
         job_dict["metadata"]["namespace"] = current_ns
 
-        utils.create_from_dict(k8s.client_corev1.api_client, data=job_dict)
+        utils.create_from_dict(kube.client_corev1.api_client, data=job_dict)
         return True
     except Exception as e:
         print(f"error: {e}")
         return False
 
 
-def delete_backup_job(k8s, pvc_name: str) -> bool:
+def delete_backup_job(kube, pvc_name: str) -> bool:
     """Delete a Kubernetes backup job"""
 
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
 
-    job_name = k8s.get_job_name(pvc_name)
+    job_name = kube.get_job_name(pvc_name)
     try:
-        k8s.client_batchv1.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
+        kube.client_batchv1.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
         print(f"  Old job '{job_name}' successfully removed.")
         return True
     except ApiException as e:
@@ -64,12 +65,12 @@ def delete_backup_job(k8s, pvc_name: str) -> bool:
         return False
 
 
-def wait_for_jobs_deletion(k8s, pvc_list: list) -> bool:
+def wait_for_jobs_deletion(kube, pvc_list: list) -> bool:
     """Hook to wait for a job to be deleted"""
 
-    current_ns = k8s.get_namespace()
+    current_ns = kube.get_namespace()
 
-    jobs_to_wait = [get_job_name(k8s, pvc) for pvc in pvc_list]
+    jobs_to_wait = [get_job_name(kube, pvc) for pvc in pvc_list]
     print(f"  Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
     
     start_time = time.time()
@@ -78,7 +79,7 @@ def wait_for_jobs_deletion(k8s, pvc_list: list) -> bool:
         active_jobs = []
         for job_name in jobs_to_wait:
             try:
-                k8s.client_batchv1.read_namespaced_job(name=job_name, namespace=current_ns)
+                kube.client_batchv1.read_namespaced_job(name=job_name, namespace=current_ns)
                 active_jobs.append(job_name)
             except ApiException as e:
                 if e.status == 404:
@@ -96,18 +97,18 @@ def wait_for_jobs_deletion(k8s, pvc_list: list) -> bool:
     return False
 
 
-def wait_for_job_completion(k8s, job_name: str) -> bool:
+def wait_for_job_completion(kube, job_name: str) -> bool:
     """Blocks the execution until the Kubernetes Job is either Succeeded or Failed."""
 
     print(f"info: waiting for job '{job_name}' to complete...", flush=True)
-    start_time = time.time()        
+    start_time = time.time()
     while True:
         timeout = 1800
         if (time.time() - start_time) > timeout:
             print(f"error: timeout reached ({timeout}s) while waiting for job '{job_name}'.")
             return False
         try:
-            job = k8s.client_batchv1.read_namespaced_job_status(name=job_name, namespace=k8s.namespace)
+            job = kube.client_batchv1.read_namespaced_job_status(name=job_name, namespace=kube.namespace)
             status = job.status
 
             if status.succeeded and status.succeeded > 0:
