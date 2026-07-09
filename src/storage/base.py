@@ -1,9 +1,7 @@
 from abc import ABC, abstractmethod
 
-class BaseStorage(ABC):
-    """
-    Abstract class defining the contract for all storage providers.
-    """
+class Storage(ABC):
+    """Abstract class defining the contract for all storage providers."""
 
     @abstractmethod
     def __init__(self, storage_address: str, storage_username: str, storage_password: str):
@@ -11,7 +9,5 @@ class BaseStorage(ABC):
 
     @abstractmethod
     def upload_stream(self, pvc_name: str, path: str, stream) -> bool:
-        """
-        Upload a continuous data stream to the target storage.
-        """
+        """Upload a continuous data stream to the target storage."""
         pass
