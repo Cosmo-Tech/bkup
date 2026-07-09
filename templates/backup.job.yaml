@@ -13,8 +13,8 @@ spec:
         - name: backup-worker
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
-          command: ["python", "src/worker.py"]
-          args: ["--path", "{{ MOUNTED_PATH }}", "--pvc", "{{ PVC_NAME }}"]
+          command: ["python", "-m", "src.worker"]
+          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}"]
           volumeMounts:
             - name: volume-to-backup
               mountPath: "{{ MOUNTED_PATH }}"

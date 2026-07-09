@@ -38,6 +38,10 @@ def main():
     storage_username = os.getenv("STORAGE_USERNAME")
     storage_password = os.getenv("STORAGE_PASSWORD", "none")
 
+
+
+
+
     if not storage_address or not storage_username:
         print("error: STORAGE_ADDRESS or STORAGE_USERNAME environment variable is missing.")
         sys.exit(1)
@@ -46,24 +50,36 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
-    # --------------------------------------------------
-    # AUTOMATIC STORAGE PROVIDER DETECTION
-    # --------------------------------------------------
-    # Azure connection strings usually start with 'DefaultEndpointsProtocol='
-    if "DefaultEndpointsProtocol" in storage_address:
-        print("info: azure blob storage provider detected.")
+
+
+    for name, value in os.environ.items():
+        print("{0}: {1}".format(name, value))
+
+    print(storage_address)
+    print(storage_username)
+    print(storage_password)
+
+
+
+    # Detect if Azure
+    # Example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/
+    if ".core.windows.net" in storage_address:
+        print("info: Azure blob storage detected.")
         storage_provider = AzureStorage(storage_address, storage_username, storage_password)
     
-    # Placeholder for future S3 integration
-    elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
-        # from src.storage.s3 import S3Storage
-        # storage_provider = S3Storage(storage_address, storage_username, storage_password)
-        print("error: S3 storage provider is detected but not implemented yet.")
-        sys.exit(1)
+    # # Detect if S3
+    # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
+    #     # from src.storage.s3 import S3Storage
+    #     # storage_provider = S3Storage(storage_address, storage_username, storage_password)
+    #     print("error: S3 storage provider is detected but not implemented yet.")
+    #     sys.exit(1)
         
     else:
         print("error: unable to detect storage provider from STORAGE_ADDRESS.")
         sys.exit(1)
+
+
+
 
     # --------------------------------------------------
     # BACKUP STREAM EXECUTION
@@ -85,7 +101,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        print(f"error: backup upload failed: {e}")
+        print(f"error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
