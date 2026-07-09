@@ -4,28 +4,37 @@ import argparse
 import tarfile
 import io
 
-# Import the storage implementations
 from src.storage.azure import AzureStorage
 
-class QueueProgressStream(io.RawIOBase):
-    def __init__(self):
-        self.buffer = bytearray()
 
-    def write(self, b):
-        self.buffer.extend(b)
-        return len(b)
+class TarGenerator:
+    """
+    Pure Python on-the-fly tar.gz generator to stream data without local disk footprint.
+    """
+    def __init__(self, target_path: str):
+        self.target_path = target_path
+        self.buffer = io.BytesIO()
 
-    def readinto(self, b):
-        size = min(len(b), len(self.buffer))
-        b[:size] = self.buffer[:size]
-        del self.buffer[:size]
-        return size
+    def __iter__(self):
+        # Open tarfile linked to our memory buffer
+        with tarfile.open(fileobj=self.buffer, mode="w:gz") as tar:
+            # Add the directory to the archive structure
+            tar.add(self.target_path, arcname=os.path.basename(self.target_path))
+            
+            # While tarfile is compressing, extract data chunk by chunk
+            self.buffer.seek(0)
+            chunk = self.buffer.read()
+            if chunk:
+                yield chunk
+            self.buffer.seek(0)
+            self.buffer.truncate(0)
 
-    def readable(self):
-        return True
+        # Grab any remaining bytes after tar closure
+        self.buffer.seek(0)
+        remaining = self.buffer.read()
+        if remaining:
+            yield remaining
 
-    def writable(self):
-        return True
 
 
 def main():
@@ -54,7 +63,7 @@ def main():
     print("detecting storage provider from STORAGE_ADDRESS...")
 
     # Azure (example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/)
-    if ".core.windows.net" in storage_address:
+    if ".blob.core.windows.net" in storage_address:
         print("info: Azure blob storage detected.")
         storage_provider = AzureStorage(storage_address, storage_username, storage_password)
     
@@ -75,24 +84,26 @@ def main():
     # BACKUP STREAM EXECUTION
     # ------------------------------
     print(f"starting on-the-fly compression and streaming to destination...")
-
     try:
-        stream = QueueProgressStream()
-        
-        with tarfile.open(fileobj=stream, mode="w:gz") as tar:
-            tar.add(args.path, arcname=os.path.basename(args.path))
-            
-            # Pass the stream to the dynamically selected provider
-            success = storage_provider.upload_stream(pvc_name=args.pvc, path=args.path, stream=stream)
+        # Instantiate our pure Python streaming generator
+        backup_generator = TarGenerator(args.path)
+
+        # Pass the generator directly to the storage provider
+        success = storage_provider.upload_stream(
+            pvc_name=args.pvc, 
+            path=args.path, 
+            data_generator=backup_generator
+        )
 
         if success:
-            print(f"info: backup successfully streamed to destination storage.")
+            print(f"info: backup successfully streamed to destination storage.", flush=True)
         else:
             sys.exit(1)
 
     except Exception as e:
-        print(f"error: {e}")
+        print(f"error: backup execution failed: {e}", flush=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

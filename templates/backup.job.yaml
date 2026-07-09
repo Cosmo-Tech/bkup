@@ -15,6 +15,13 @@ spec:
           imagePullPolicy: Always
           command: ["python", "-m", "src.worker"]
           args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}"]
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
           volumeMounts:
             - name: volume-to-backup
               mountPath: "{{ MOUNTED_PATH }}"

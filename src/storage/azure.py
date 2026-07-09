@@ -6,7 +6,8 @@ from src.storage.base import BaseStorage
 
 class AzureStorage(BaseStorage):
     """
-    Azure Blob Storage provider implementation with automatic container creation.
+    Azure Blob Storage provider implementation in pure Python.
+    Container format: <cluster_name-namespace>
     """
 
     def __init__(self, storage_address: str, storage_username: str, storage_password: str):
@@ -15,45 +16,38 @@ class AzureStorage(BaseStorage):
         else:
             self.account_url = storage_address
 
-        self.container_name = storage_username
         self.account_key = storage_password
         
-        # Initialize the global service client
+        # Dynamic container naming
+        cluster_name = os.getenv("CLUSTER_NAME", "kob-dev")
+        namespace = os.getenv("NAMESPACE", storage_username)
+        self.container_name = f"{cluster_name}-{namespace}".lower().replace("_", "-")
+        
         self.blob_service_client = BlobServiceClient(
             account_url=self.account_url,
             credential=self.account_key
         )
         
-        # Automatically handle container creation or reuse
         self._ensure_container_exists()
 
     def _ensure_container_exists(self):
         """
-        Creates the Azure container if it does not exist, otherwise reuses it.
+        Creates the Azure container if it does not exist.
         """
         try:
-            print(f"info: checking or creating Azure container '{self.container_name}'...")
+            print(f"info: checking or creating Azure container '{self.container_name}'...", flush=True)
             self.blob_service_client.create_container(name=self.container_name)
-            print(f"info: container '{self.container_name}' successfully created.")
+            print(f"info: container '{self.container_name}' successfully created.", flush=True)
         except ResourceExistsError:
-            # This exception means the container already exists, which is perfectly fine
-            print(f"info: container '{self.container_name}' already exists. Reusing it.")
+            print(f"info: container '{self.container_name}' already exists. Reusing it.", flush=True)
         except Exception as e:
-            print(f"error: failed to verify/create Azure container: {e}")
+            print(f"error: failed to verify/create Azure container: {e}", flush=True)
 
-    def upload_stream(self, pvc_name: str, path: str, stream) -> bool:
+    def upload_stream(self, pvc_name: str, path: str, data_generator) -> bool:
         date_str = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         
-        # --------------------------------------------------
-        # VIRTUAL DIRECTORY ROUTING
-        # --------------------------------------------------
-        # We dynamicly analyze the PVC name to route it to the right virtual directory
-        if "postgresql" in pvc_name.lower() or "psql" in pvc_name.lower():
-            folder = "backups/psql"
-        else:
-            folder = "backups/disks"
-
-        blob_name = f"{folder}/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
+        # Layout: disks/pvc_name/pvc_name-timestamp.tar.gz
+        blob_name = f"disks/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
 
         try:
             blob_client = self.blob_service_client.get_blob_client(
@@ -61,9 +55,11 @@ class AzureStorage(BaseStorage):
                 blob=blob_name
             )
             
-            print(f"info: uploading directly to '{blob_name}'...")
-            blob_client.upload_blob(stream, overwrite=True, max_concurrency=2)
+            print(f"info: uploading directly to '{blob_name}'...", flush=True)
+            
+            # The Azure SDK natively supports data generators for chunked upload
+            blob_client.upload_blob(data_generator, overwrite=True, max_concurrency=2)
             return True
         except Exception as e:
-            print(f"error: azure upload failed: {e}")
+            print(f"error: azure upload failed: {e}", flush=True)
             return False
