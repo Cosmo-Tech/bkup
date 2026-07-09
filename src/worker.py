@@ -38,10 +38,6 @@ def main():
     storage_username = os.getenv("STORAGE_USERNAME")
     storage_password = os.getenv("STORAGE_PASSWORD", "none")
 
-
-
-
-
     if not storage_address or not storage_username:
         print("error: STORAGE_ADDRESS or STORAGE_USERNAME environment variable is missing.")
         sys.exit(1)
@@ -52,22 +48,17 @@ def main():
 
 
 
-    for name, value in os.environ.items():
-        print("{0}: {1}".format(name, value))
+    # ------------------------------
+    # STORAGE PROVIDER DETECTION
+    # ------------------------------
+    print("detecting storage provider from STORAGE_ADDRESS...")
 
-    print(storage_address)
-    print(storage_username)
-    print(storage_password)
-
-
-
-    # Detect if Azure
-    # Example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/
+    # Azure (example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/)
     if ".core.windows.net" in storage_address:
         print("info: Azure blob storage detected.")
         storage_provider = AzureStorage(storage_address, storage_username, storage_password)
     
-    # # Detect if S3
+    # # AWS/S3
     # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
     #     # from src.storage.s3 import S3Storage
     #     # storage_provider = S3Storage(storage_address, storage_username, storage_password)
@@ -80,11 +71,10 @@ def main():
 
 
 
-
-    # --------------------------------------------------
+    # ------------------------------
     # BACKUP STREAM EXECUTION
-    # --------------------------------------------------
-    print(f"info: starting on-the-fly compression and streaming to destination...")
+    # ------------------------------
+    print(f"starting on-the-fly compression and streaming to destination...")
 
     try:
         stream = QueueProgressStream()
