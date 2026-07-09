@@ -3,7 +3,6 @@ from datetime import datetime
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceExistsError
 from src.storage.base import Storage
-from src.kubernetes import Storage
 
 
 class AzureStorage(Storage):
@@ -11,10 +10,10 @@ class AzureStorage(Storage):
     def __init__(self, kube, storage_address: str, storage_username: str, storage_password: str):
         cluster_name = kube.get_cluster_name()
         namespace = kube.get_namespace()
-        self.blob_container = f"{cluster_name}-{namespace}".lower().replace("_", "-")
+        self.blob_container = f"{cluster_name}-{namespace}".lower()
         self.storage_address = storage_address
         self.storage_password = storage_password
-        self.blob_service_client = BlobServiceClient(
+        self.client = BlobServiceClient(
             account_url=self.storage_address,
             credential=self.storage_password
         )        
@@ -25,7 +24,7 @@ class AzureStorage(Storage):
         """Creates the Azure container if it does not exist."""
         try:
             print(f"info: checking or creating Azure container '{self.blob_container}'...")
-            self.blob_service_client.create_container(name=self.blob_container)
+            self.client.create_container(name=self.blob_container)
             print(f"info: container '{self.blob_container}' successfully created.")
         except ResourceExistsError:
             print(f"info: container '{self.blob_container}' already exists. Reusing it.")
@@ -40,7 +39,7 @@ class AzureStorage(Storage):
         blob_name = f"disks/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
 
         try:
-            blob_client = self.blob_service_client.get_blob_client(
+            blob_client = self.client.get_blob_client(
                 container=self.blob_container, 
                 blob=blob_name
             )

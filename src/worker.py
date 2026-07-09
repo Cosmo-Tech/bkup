@@ -8,9 +8,7 @@ from src.storage.azure import AzureStorage
 
 
 class TarGenerator:
-    """
-    Pure Python on-the-fly tar.gz generator to stream data without local disk footprint.
-    """
+    """Pure Python on-the-fly tar.gz generator to stream data without local disk footprint."""
     def __init__(self, target_path: str):
         self.target_path = target_path
         self.buffer = io.BytesIO()
@@ -65,7 +63,7 @@ def main():
     # Azure (example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/)
     if ".blob.core.windows.net" in storage_address:
         print("info: Azure blob storage detected.")
-        storage_provider = AzureStorage(storage_address, storage_username, storage_password)
+        storage_provider = AzureStorage(kube, storage_address, storage_username, storage_password)
     
     # # AWS/S3
     # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
@@ -96,12 +94,12 @@ def main():
         )
 
         if success:
-            print(f"info: backup successfully streamed to destination storage.", flush=True)
+            print(f"info: backup successfully streamed to destination storage.")
         else:
             sys.exit(1)
 
     except Exception as e:
-        print(f"error: backup execution failed: {e}", flush=True)
+        print(f"error: backup execution failed: {e}")
         sys.exit(1)
 
 
