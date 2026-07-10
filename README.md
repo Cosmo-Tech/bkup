@@ -50,7 +50,7 @@
   * `backup-map` ConfigMap
     > Note: this ConfigMap is used to orchestrate the backup. \
     > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it. \
-    > If the ConfigMap already exists, you can also get it with `python -m src.master -c KUBECTL_CONTEXT -gm` or `kubectl get cm clustersnap-backup-map`
+    > If it already exists, you can read it with `python -m src.master -c KUBECTL_CONTEXT -gm` or `kubectl get cm clustersnap-backup-map`
     ```
     python -m src.master -c KUBECTL_CONTEXT -rm
     ```
