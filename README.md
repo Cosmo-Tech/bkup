@@ -17,20 +17,20 @@
 
 
 ## Installation
-* install CLI
-  * create venv
+* Install CLI
+  * Create venv
     ```
     python -m .venv
     source .venv/bin/activate
     ```
 
-  * install dependencies
+  * Install dependencies
     ```
     pip install --upgrade pip
     pip install -r requirements.txt
     ```
 
-* create required Kubernetes objects
+* Create required Kubernetes objects
   * `pullImage` secret
     ```
     kubectl create secret docker-registry registry-auth-clustersnap \
