@@ -1,7 +1,6 @@
 import os
 import sys
 import argparse
-import tarfile
 import io
 
 from src.storage.azure import AzureStorage
@@ -40,7 +39,7 @@ def main():
     # ------------------------------
     print("detecting storage provider from STORAGE_ADDRESS...")
 
-    # Azure (example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/)
+    # Azure (example of Azure Storage endpoint : https://example.blob.core.windows.net/)
     if ".blob.core.windows.net" in storage_address:
         print("info: Azure blob storage detected.")
         storage_provider = AzureStorage(
