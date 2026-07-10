@@ -9,6 +9,7 @@ class Kubernetes:
 
     def __init__(self, context: str, namespace: str):
         self.context = context
+        self.namespace = namespace
         self.is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount")
         try:
             # Connect from Kubernetes pod
@@ -24,8 +25,6 @@ class Kubernetes:
             self.client_batchv1 = client.BatchV1Api()
         except Exception as e:
             print(f"error: {e}")
-
-        self.namespace = self.get_namespace(namespace)
 
 
     # def get_context(self) -> str:
