@@ -139,57 +139,57 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
     return False
 
 
-def get_node_name(kube, pvc_name: str) -> str:
-    """Get node name where the PVC is attached."""
-    namespace = kube.get_namespace()
-    try:
-        # get PV name from the PVC
-        pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=namespace)
-        pv_name = pvc_info.spec.volume_name
-        if not pv_name:
-            return None
+# def get_node_name(kube, pvc_name: str) -> str:
+#     """Get node name where the PVC is attached."""
+#     namespace = kube.get_namespace()
+#     try:
+#         # get PV name from the PVC
+#         pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=namespace)
+#         pv_name = pvc_info.spec.volume_name
+#         if not pv_name:
+#             return None
 
-        # STRATEGY 1 : Try to get from VolumeAttachment
-        try:
-            attachments = kube.client_corev1.api_client.call_api(
-                '/api/v1/storage.k8s.io/v1/volumeattachments',
-                'GET',
-                auth_settings=['BearerToken'],
-                response_type='object'
-            )[0]
-            if attachments and 'items' in attachments:
-                for item in attachments['items']:
-                    spec = item.get('spec', {})
-                    if spec.get('volumeName') == pv_name:
-                        node = spec.get('nodeName')
-                        if node:
-                            print(f"found node from VolumeAttachment : {node}")
-                            return node
-        except Exception as e:
-            pass
+#         # STRATEGY 1 : Try to get from VolumeAttachment
+#         try:
+#             attachments = kube.client_corev1.api_client.call_api(
+#                 '/api/v1/storage.k8s.io/v1/volumeattachments',
+#                 'GET',
+#                 auth_settings=['BearerToken'],
+#                 response_type='object'
+#             )[0]
+#             if attachments and 'items' in attachments:
+#                 for item in attachments['items']:
+#                     spec = item.get('spec', {})
+#                     if spec.get('volumeName') == pv_name:
+#                         node = spec.get('nodeName')
+#                         if node:
+#                             print(f"found node from VolumeAttachment : {node}")
+#                             return node
+#         except Exception as e:
+#             pass
 
-        # STRATEGY 2 : Try to get from PV
-        pv_info = kube.client_corev1.read_persistent_volume(name=pv_name)
-        if pv_info.spec.node_affinity and pv_info.spec.node_affinity.required:
-            node_terms = pv_info.spec.node_affinity.required.node_selector_terms
-            for term in node_terms:
-                for expr in term.match_expressions:
-                    if expr.key == "kubernetes.io/hostname" and expr.values:
-                        print(f"found node from PV NodeAffinity : {expr.values[0]}")
-                        return expr.values[0]
+#         # STRATEGY 2 : Try to get from PV
+#         pv_info = kube.client_corev1.read_persistent_volume(name=pv_name)
+#         if pv_info.spec.node_affinity and pv_info.spec.node_affinity.required:
+#             node_terms = pv_info.spec.node_affinity.required.node_selector_terms
+#             for term in node_terms:
+#                 for expr in term.match_expressions:
+#                     if expr.key == "kubernetes.io/hostname" and expr.values:
+#                         print(f"found node from PV NodeAffinity : {expr.values[0]}")
+#                         return expr.values[0]
 
-        # STRATEGY 3 : Try to get from Pod
-        pods = kube.client_corev1.list_namespaced_pod(namespace=namespace)
-        for pod in pods.items:
-            if pod.spec.volumes:
-                for vol in pod.spec.volumes:
-                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                        if pod.spec.node_name:
-                            print(f"found node from Pod {pod.metadata.name} : {pod.spec.node_name}")
-                            return pod.spec.node_name
+#         # STRATEGY 3 : Try to get from Pod
+#         pods = kube.client_corev1.list_namespaced_pod(namespace=namespace)
+#         for pod in pods.items:
+#             if pod.spec.volumes:
+#                 for vol in pod.spec.volumes:
+#                     if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+#                         if pod.spec.node_name:
+#                             print(f"found node from Pod {pod.metadata.name} : {pod.spec.node_name}")
+#                             return pod.spec.node_name
 
-    except Exception as e:
-        print(f"error dans get_node_name: {e}")
+#     except Exception as e:
+#         print(f"error dans get_node_name: {e}")
 
-    # Return none in case node not found
-    return None
+#     # Return none in case node not found
+#     return None

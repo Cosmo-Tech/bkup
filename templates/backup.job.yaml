@@ -9,15 +9,6 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - "{{ NODE_NAME }}"
       containers:
         - name: backup-worker
           image: ghcr.io/cosmo-tech/clustersnap:latest
@@ -36,7 +27,6 @@ spec:
               mountPath: "{{ MOUNTED_PATH }}"
               readOnly: true
           env:
-
             - name: STORAGE_ADDRESS
               valueFrom:
                 secretKeyRef:
