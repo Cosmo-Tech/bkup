@@ -41,7 +41,7 @@
     ```
 
   * `config` Secret
-    * Edit `src/templates/backup.secret.yaml` with your own config
+    * Edit `src/templates/config.secret.yaml` with your own config
     * Apply
       ```
       NAMESPACE=YOUR_NAMESPACE envsubst < templates/backup.secret.yaml | kubectl apply -f -
