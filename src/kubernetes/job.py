@@ -34,7 +34,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
         yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
         yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc_name)
         yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
-        # yaml_content = yaml_content.replace("{{ NODE_NAME }}", node_name)
+        yaml_content = yaml_content.replace("{{ NODE_NAME }}", node_name)
 
         job_dict = yaml.safe_load(yaml_content)
 

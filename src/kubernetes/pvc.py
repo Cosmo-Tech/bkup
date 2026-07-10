@@ -109,7 +109,7 @@ def scale_replicas(kube, resource_type: str, name: str, replicas: int) -> bool:
         return False
 
 
-def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120) -> bool:
+def wait_for_scale_down(kube, resource_type: str, name: str) -> bool:
     """Blocks the execution until replicas are scaled to 0"""
     namespace = kube.get_namespace()
     
@@ -117,7 +117,7 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
     print(f"waiting for {resource} to be fully stopped...")
     
     start_time = time.time()
-    while time.time() - start_time < timeout:
+    while time.time() - start_time < 120:
         try:
             if resource_type.lower() == "statefulset":
                 res = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=namespace)
@@ -139,104 +139,91 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
     return False
 
 
-    def wait_for_volume_detachment(kube: Kubernetes, pvc_name: str, timeout: int = 120, check_interval: int = 5) -> bool:
-        """Block execution untils the PVC is detached from its node"""
+def wait_for_volume_detachment(kube, pvc_name: str) -> bool:
+    """Block execution until the PVC is detached from its node"""
 
-        print(f"  info: waiting for volume of PVC '{pvc_name}' to be fully detached...")
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            try:
-                pvc_obj = kube.client_corev1.read_namespaced_persistent_volume_claim(
-                    name=pvc_name, 
-                    namespace=kube.get_namespace()
-                )
-                pv_name = pvc_obj.spec.volume_name
-                
-                if not pv_name:
-                    return True
-
-                attachments = kube.client_corev1.api_client.call_api(
-                    '/apis/storage.k8s.io/v1/volumeattachments', 'GET',
-                    auth_settings=['BearerToken'], response_type='object'
-                )[0]
-                
-                is_attached = False
-                for item in attachments.get('items', []):
-                    spec = item.get('spec', {})
-                    status = item.get('status', {})
-                    
-                    if spec.get('volumeName') == pv_name:
-                        # Si l'attachement est marqué comme "attached" et n'a pas de deletionTimestamp
-                        if status.get('attached', False) and not item.get('metadata', {}).get('deletionTimestamp'):
-                            is_attached = True
-                            break
-                
-                if not is_attached:
-                    print(f"    -> Volume for PVC '{pvc_name}' is successfully detached and ready!")
-                    return True
-                    
-            except Exception as e:
-                # Si l'accès aux VolumeAttachments échoue (ex: RBAC restrictif), on fallback sur une gestion d'erreur légère
-                print(f"    warn: error checking attachment status ({e}), retrying...")
-                
-            time.sleep(check_interval)
+    print(f"  info: waiting for volume of PVC '{pvc_name}' to be fully detached...")
+    start_time = time.time()
+    
+    while time.time() - start_time < 120:
+        try:
+            pvc_obj = kube.client_corev1.read_namespaced_persistent_volume_claim(
+                name=pvc_name, 
+                namespace=kube.get_namespace()
+            )
+            pv_name = pvc_obj.spec.volume_name
             
-        print(f"  warn: timeout reached while waiting for PVC '{pvc_name}' to detach. Proceeding anyway...")
-        return False
+            if not pv_name:
+                return True
+
+            attachments = kube.client_storagev1.list_volume_attachment()
+            
+            is_attached = False
+            for item in attachments.items:
+                item_dict = kube.client_corev1.api_client.sanitize_for_serialization(item)
+                
+                spec = item_dict.get('spec', {})
+                status = item_dict.get('status', {})
+                metadata = item_dict.get('metadata', {})
+                
+                if spec.get('volume_name') == pv_name:
+                    if status.get('attached', False) and not metadata.get('deletion_timestamp'):
+                        is_attached = True
+                        break
+
+            if not is_attached:
+                print(f"    Volume for PVC '{pvc_name}' is successfully detached and ready!")
+                print("    waiting 10s for storage backend initialization...")
+                time.sleep(10)
+                return True
+                
+        except Exception as e:
+            print(f"    warn: error checking attachment status ({e}), retrying...")
+            
+        time.sleep(5)
+        
+    print(f"  warn: timeout reached while waiting for PVC '{pvc_name}' to detach. Proceeding anyway...")
+    return False
 
 
-# def get_node_name(kube, pvc_name: str) -> str:
-#     """Get node name where the PVC is attached."""
-#     namespace = kube.get_namespace()
-#     try:
-#         # get PV name from the PVC
-#         pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=namespace)
-#         pv_name = pvc_info.spec.volume_name
-#         if not pv_name:
-#             return None
+import json
 
-#         # STRATEGY 1 : Try to get from VolumeAttachment
-#         try:
-#             attachments = kube.client_corev1.api_client.call_api(
-#                 '/api/v1/storage.k8s.io/v1/volumeattachments',
-#                 'GET',
-#                 auth_settings=['BearerToken'],
-#                 response_type='object'
-#             )[0]
-#             if attachments and 'items' in attachments:
-#                 for item in attachments['items']:
-#                     spec = item.get('spec', {})
-#                     if spec.get('volumeName') == pv_name:
-#                         node = spec.get('nodeName')
-#                         if node:
-#                             print(f"found node from VolumeAttachment : {node}")
-#                             return node
-#         except Exception as e:
-#             pass
+import json
 
-#         # STRATEGY 2 : Try to get from PV
-#         pv_info = kube.client_corev1.read_persistent_volume(name=pv_name)
-#         if pv_info.spec.node_affinity and pv_info.spec.node_affinity.required:
-#             node_terms = pv_info.spec.node_affinity.required.node_selector_terms
-#             for term in node_terms:
-#                 for expr in term.match_expressions:
-#                     if expr.key == "kubernetes.io/hostname" and expr.values:
-#                         print(f"found node from PV NodeAffinity : {expr.values[0]}")
-#                         return expr.values[0]
+def get_node_name(kube, pvc_name: str) -> str:
+    """
+    Get node name where the PVC is attached by reading the cached map 
+    stored in the master pod's namespace.
+    """
+    target_namespace = kube.get_namespace()
 
-#         # STRATEGY 3 : Try to get from Pod
-#         pods = kube.client_corev1.list_namespaced_pod(namespace=namespace)
-#         for pod in pods.items:
-#             if pod.spec.volumes:
-#                 for vol in pod.spec.volumes:
-#                     if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-#                         if pod.spec.node_name:
-#                             print(f"found node from Pod {pod.metadata.name} : {pod.spec.node_name}")
-#                             return pod.spec.node_name
+    try:
+        # Lecture du cache unique dans le namespace du pod master
+        cm = kube.client_corev1.read_namespaced_config_map(name="clustersnap-backup-cache", namespace=target_namespace)
+        if cm.data and "backup_map.json" in cm.data:
+            saved_map = json.loads(cm.data["backup_map.json"])
+            
+            # Recherche de la correspondance pour ce PVC
+            for ns_item in saved_map.get("namespaces", []):
+                for claim in ns_item.get("claims", []):
+                    if claim.get("name") == pvc_name and claim.get("attachment_node"):
+                        return str(claim.get("attachment_node"))                            
+    except Exception:
+        pass
 
-#     except Exception as e:
-#         print(f"error dans get_node_name: {e}")
+    try:
+        pods = kube.client_corev1.list_namespaced_pod(namespace=target_namespace)
+        for pod in pods.items:
+            if pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                        if pod.spec.node_name:
+                            return str(pod.spec.node_name)
+                            
+        nodes = kube.client_corev1.list_node()
+        if nodes.items:
+            return str(nodes.items[0].metadata.name)
+    except Exception:
+        pass
 
-#     # Return none in case node not found
-#     return None
+    return "unknown-node"

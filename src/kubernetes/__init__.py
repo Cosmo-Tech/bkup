@@ -2,8 +2,11 @@ import base64
 import json
 import os
 from kubernetes import client, config
+from kubernetes.client.rest import ApiException
+
 import src.kubernetes.pvc as pvc
 import src.kubernetes.job as job
+
 
 class Kubernetes:
 
@@ -23,6 +26,7 @@ class Kubernetes:
             self.client_corev1 = client.CoreV1Api()
             self.client_appsv1 = client.AppsV1Api()
             self.client_batchv1 = client.BatchV1Api()
+            self.client_storagev1 = client.StorageV1Api()
         except Exception as e:
             print(f"error: {e}")
 
@@ -74,6 +78,53 @@ class Kubernetes:
         except Exception:
             return False
 
+
+    def get_configmap(self, name: str, namespace: str) -> dict:
+        """Reads a generic ConfigMap and returns its JSON content as a dictionary."""
+        try:
+            cm = self.client_corev1.read_namespaced_config_map(name=name, namespace=namespace)
+            filename = f"{name}.json"
+            if cm.data and filename in cm.data:
+                return json.loads(cm.data[filename])
+        except ApiException as e:
+            if e.status != 404:
+                print(f"  warn: failed to read ConfigMap '{name}': {e}")
+        except Exception as e:
+            print(f"  warn: unexpected error while loading ConfigMap '{name}': {e}")
+            
+        return {}
+
+
+    def save_to_configmap(self, name: str, namespace: str, data: dict):
+        """Saves a generic dictionary into a Kubernetes ConfigMap as serialized JSON."""
+        # On sérialise les données passées en argument
+        cm_data = {f"{name}.json": json.dumps(data, indent=2)}
+        
+        body = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": name,
+                "namespace": namespace
+            },
+            "data": cm_data
+        }
+        
+        try:
+            self.client_corev1.replace_namespaced_config_map(name=name, namespace=namespace, body=body)
+        except ApiException as e:
+            if e.status == 404:
+                try:
+                    self.client_corev1.create_namespaced_config_map(namespace=namespace, body=body)
+                except Exception as create_err:
+                    print(f"  error: cannot create ConfigMap '{name}': {create_err}")
+            else:
+                print(f"  error: failed to replace ConfigMap '{name}': {e}")
+        except Exception as e:
+            print(f"  warn: unexpected error while storing ConfigMap '{name}': {e}")
+
+
+
     # ------------------
     # pvc.py
     # ------------------
@@ -89,11 +140,15 @@ class Kubernetes:
     def scale_replicas(self, resource_type: str, name: str, replicas: int) -> bool:
         return pvc.scale_replicas(self, resource_type, name, replicas)
 
-    def wait_for_scale_down(self, resource_type: str, name: str, timeout: int = 120) -> bool:
-        return pvc.wait_for_scale_down(self, resource_type, name, timeout)
+    def wait_for_scale_down(self, resource_type: str, name: str) -> bool:
+        return pvc.wait_for_scale_down(self, resource_type, name)
 
     def get_node_name(self, pvc_name: str) -> str:
         return pvc.get_node_name(self, pvc_name)
+
+    def wait_for_volume_detachment(self, pvc_name: str) -> bool:
+        return pvc.wait_for_volume_detachment(self, pvc_name)
+
 
     # ------------------
     # job.py

@@ -3,8 +3,9 @@ import argparse
 import time
 import signal
 import os
+import json
 from src.kubernetes import Kubernetes
-
+import src.utils.backup_map as bpm
 
 backup_workloads = {}
 kube_client_sigkill = None
@@ -38,40 +39,6 @@ def restore_production_on_signal(signum, frame):
 
     print("info: rollback finished. exiting.")
     sys.exit(1)
-
-
-def get_backup_map(kube: Kubernetes, target_namespaces: list):
-    """Get a YAML map of what will be backuped"""
-
-    print(f"cluster: {kube.get_cluster_name()}")
-    print(f"namespaces:")
-    for ns in target_namespaces:
-        kube.namespace = ns
-        print(f"- name: {kube.get_namespace()}")
-
-        pvcs = kube.list_pvc()
-        if not pvcs:
-            print(f"  claims: []")
-            continue
-
-        if pvcs:
-            print(f"  claims:")
-            for pvc in pvcs:
-                print(f"    - name: {pvc['name']}")
-                print(f"      status: {pvc['status']}")
-                print(f"      capacity: {pvc['capacity']}")
-
-                mounts = kube.get_pvc(pvc['name'])
-                if mounts:
-                    print(f"      mounts:")
-                    for m in mounts:
-                        print(f"      - container: {m['container_name']}")
-                        print(f"        path: {m['mount_path']}")
-                        print(f"        read_only: {m['read_only']}")
-                        print(f"        resource: {m['resource']}")
-                else:
-                    print(f"      mounts: {mounts}")
-
 
 
 def run_backup_job(kube: Kubernetes, namespace: str):
@@ -125,6 +92,7 @@ def run_backup_job(kube: Kubernetes, namespace: str):
         mounted_path = target['mount_path']
 
         if resource_key not in backup_workloads:
+            node_name = kube.get_node_name(pvc_name) 
             initial_replicas = kube.get_replicas(resource_type, resource_name)
 
             backup_workloads[resource_key] = {
@@ -134,7 +102,7 @@ def run_backup_job(kube: Kubernetes, namespace: str):
                 "initial_replicas": initial_replicas,
                 "pvc_name": pvc_name,
                 "mounted_path": mounted_path,
-                "node_name": None # Plus besoin de chercher le nœud !
+                "node_name": node_name
             }
 
             if initial_replicas > 0:
@@ -153,7 +121,10 @@ def run_backup_job(kube: Kubernetes, namespace: str):
     print("\nensure PVC are not attached anymore...")
     for resource_key, info in backup_workloads.items():
         if info["namespace"] == namespace:
-            wait_for_volume_detachment(kube, info["pvc_name"])
+            kube.wait_for_volume_detachment(info["pvc_name"])
+
+
+    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{node_name}")
 
 
     # ==================================================
@@ -208,7 +179,7 @@ def main():
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace (comma-separated or 'all')")
     parser.add_argument("-j", "--job", action="store_true", help="Run a backup job")
-    parser.add_argument("-m", "--map", action="store_true", help="Get the backup map")
+    parser.add_argument("-m", "--map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
     args = parser.parse_args()
 
 
@@ -236,13 +207,18 @@ def main():
 
 
     if args.job:
-        get_backup_map(kube, target_namespaces)
+        bpm.get_backup_map(kube, target_namespaces)
         for ns in target_namespaces:
             kube.namespace = ns
-            run_backup_job(kube, ns)
+            run_backup_job(kube, namespace=ns)
 
     elif args.map:
-        get_backup_map(kube, target_namespaces)
+        backup_map = bpm.backup_map_scanner(kube, target_namespaces)
+        kube.save_to_configmap(
+            name="clustersnap-backup-map",
+            namespace=kube.get_namespace(),
+            data=backup_map
+        )
 
     else:
         print('please run with --job or --map (--help for more info)')
