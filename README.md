@@ -4,11 +4,11 @@
 > Clustersnap is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
 
-* **Export** Kubernetes data to remote storage.
-* **Import** backed-up data to Kubernetes.
-* **Backups Isolation:** Each Kubernetes namespace is backed up into a dedicated space.
-* **Ensure data Integrity:** Scale-down running workload, backup their volumes and restore the workload.
-* **Cloud-Native & Minimalist:** Light footprint, easy to install, and fully customizable from standard Kubernetes manifests without third-party CRD dependencies.
+* :minidisc: **Export** Kubernetes data to remote storage.
+* :recycle: **Import** backed-up data to Kubernetes.
+* :package: **Backups Isolation:** Each Kubernetes namespace is backed up into a dedicated space.
+* :closed_lock_with_key: **Ensure data Integrity:** Scale-down running workload, backup their volumes and restore the workload.
+* :pinching_hand: **Cloud-Native & Minimalist:** Light footprint, easy to install, and fully customizable from standard Kubernetes manifests without third-party CRD dependencies.
 
 
 ## Requirements
@@ -41,8 +41,8 @@
     ```
 
   * `config` Secret
-    * edit `src/templates/backup.secret.yaml` with your own config
-    * apply
+    * Edit `src/templates/backup.secret.yaml` with your own config
+    * Apply
       ```
       NAMESPACE=YOUR_NAMESPACE envsubst < templates/backup.secret.yaml | kubectl apply -f -
       ```
@@ -97,4 +97,10 @@ tofill
 tofill
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/clustersnap/refs/heads/main/LICENSE.md) for details.
+This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/clustersnap/main/LICENSE.md) for details.
+
+<br>
+<br>
+<br>
+
+Made with :heart: by Cosmo Tech DevOps team
