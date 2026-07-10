@@ -29,6 +29,10 @@ class Kubernetes:
         return self.context
 
 
+    def get_cluster_name(self) -> str:
+        return self.context.lower().strip()
+
+
     def get_namespace(self) -> str:
         return self.namespace
 
@@ -40,42 +44,6 @@ class Kubernetes:
             raise RuntimeError("critical: Kubernetes namespace execution path missing. Aborting.")
         with open(ns_path, "r") as f:
             return f.read().strip()
-
-
-    def get_cluster_name(self) -> str:
-        token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-        if not os.path.exists(token_path):
-            raise RuntimeError("critical: Kubernetes service account token missing. Cannot resolve cluster identity.")
-
-        with open(token_path, "r") as f:
-            token = f.read().strip()
-
-        try:
-            # Decode the JWT token payload without external libraries
-            payload_b64 = token.split(".")[1]
-            payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
-            payload = json.loads(base64.b64decode(payload_b64).decode("utf-8"))
-            
-            issuer = payload.get("iss", "")
-            if not issuer:
-                raise ValueError("Issuer claim 'iss' missing in token.")
-
-            # Clean URL prefixes to get the raw domain/IP identifier
-            cluster_id = issuer.replace("https://", "").replace("http://", "").split("/")[0]
-            
-            # If the issuer uses the generic internal loopback, extract the specific cloud-defined metadata identifier
-            if "kubernetes.default" in cluster_id or cluster_id.startswith("10."):
-                if "kubernetes" in payload:
-                    # Some distributions include accurate multi-cluster metadata here
-                    return payload["kubernetes"].get("clusterName", "cluster").lower().strip()
-                # Use the core identification part of the OIDC provider domain name mapping
-                cluster_id = issuer.split(".")[-1] if "." in issuer else "cluster"
-
-            # Return the clean alphanumeric unique signature part
-            return cluster_id.split(".")[0].split("-")[0].lower().strip()
-
-        except Exception as e:
-            raise RuntimeError(f"critical: Failed to determine cluster identity from token: {e}")
 
 
     def check_secret_exists(self, secret: str) -> bool:

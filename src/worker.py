@@ -44,7 +44,13 @@ def main():
 
     storage_address = os.getenv("STORAGE_ADDRESS")
     storage_username = os.getenv("STORAGE_USERNAME")
-    storage_password = os.getenv("STORAGE_PASSWORD", "none")
+    storage_password = os.getenv("STORAGE_PASSWORD")
+    cluster_name = os.getenv("CLUSTER_NAME")
+    namespace = os.getenv("NAMESPACE")
+
+    
+    for key, value in os.environ.items():
+        print('{}: {}'.format(key, value))
 
     if not storage_address or not storage_username:
         print("error: STORAGE_ADDRESS or STORAGE_USERNAME environment variable is missing.")

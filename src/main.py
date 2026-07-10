@@ -2,6 +2,7 @@ import sys
 import argparse
 import time
 import signal
+import os
 from src.kubernetes import Kubernetes
 
 
@@ -192,6 +193,9 @@ def main():
     # SIGTERM = Kubernetes Pod killed
     signal.signal(signal.SIGTERM, restore_production_on_signal)
 
+
+
+
     parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace")
@@ -199,8 +203,26 @@ def main():
     parser.add_argument("-m", "--map", action="store_true", help="Get the backup map")
     args = parser.parse_args()
 
-    kube = Kubernetes(context=args.context, namespace=args.namespace)
+    cluster_name = args.context
+    namespace = args.namespace
 
+    # Export env to use from YAML templates 
+    os.environ["CLUSTER_NAME"] = cluster_name
+    os.environ["NAMESPACE"] = namespace
+
+
+    # if not cluster_name:
+    #     print("error: Cluster name must be defined via CLUSTER_NAME env or --context arg.")
+    #     sys.exit(1)
+        
+    # if not namespace:
+    #     print("error: Namespace must be defined via NAMESPACE env or --namespace arg.")
+    #     sys.exit(1)
+
+    # for key, value in os.environ.items():
+    #     print('{}: {}'.format(key, value))
+
+    kube = Kubernetes(context=cluster_name, namespace=namespace)
     kube_client_sigkill = kube
 
     if args.job:

@@ -9,8 +9,10 @@ class AzureStorage(Storage):
 
     def __init__(self, kube, storage_address: str, storage_username: str, storage_password: str):
         cluster_name = kube.get_cluster_name()
-        namespace = kube.get_namespace()
-        self.blob_container = f"{cluster_name}-{namespace}".lower()
+        namespace = kube.get_runtime_namespace()
+        
+        raw_container_name = f"{cluster_name}-{namespace}"
+        self.blob_container = raw_container_name.lower().replace("_", "-").replace(".", "-")
         self.storage_address = storage_address
         self.storage_password = storage_password
         self.client = BlobServiceClient(

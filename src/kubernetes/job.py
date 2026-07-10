@@ -14,6 +14,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
     """Create a Kubernetes job to run backups"""
 
     current_ns = kube.get_namespace()
+    cluster_context = kube.get_cluster_name()
 
     secret_required = "clustersnap-config"
     if not kube.check_secret_exists(secret_required):
@@ -40,6 +41,18 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
         if "metadata" not in job_dict:
             job_dict["metadata"] = {}
         job_dict["metadata"]["namespace"] = current_ns
+
+        try:
+            containers = job_dict["spec"]["template"]["spec"]["containers"]
+            for container in containers:
+                if "env" not in container or container["env"] is None:
+                    container["env"] = []
+                container["env"].append({
+                    "name": "CLUSTER_NAME",
+                    "value": str(cluster_context)
+                })
+        except KeyError as e:
+            print(f"warn: {e}")
 
         utils.create_from_dict(kube.client_corev1.api_client, data=job_dict)
         return True

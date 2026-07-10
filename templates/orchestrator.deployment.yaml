@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clustersnap-orchestrator
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: clustersnap-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: ghcr.io/cosmo-tech/clustersnap:latest
+          command:
+            - "python"
+            - "-m"
+            - "src.main"
+            - "--job"
+          env:
+            - name: CLUSTER_NAME
+              value: "changeme"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
