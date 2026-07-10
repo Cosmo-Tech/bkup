@@ -1,98 +1,86 @@
-# ClusterSnap - Cloud-Agnostic Kubernetes Backup Tool
+# ClusterSnap
+**Cloud-Agnostic Kubernetes Backup Tool**
 
-> ClusterSnap runs as a Kubernetes CronJob, zips PVC data from a shared volume,
-> uploads the archive to any cloud storage backend (AWS S3, MinIO, SeaweedFS, or
-> Azure Blob Storage), and pushes structured telemetry to Grafana Loki and
-> Prometheus - all from a single, provider-agnostic codebase.
+> Clustersnap is a lightweight, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
-- 🗜️ **Single ZIP archive** per backup run using Python's built-in `zipfile`
-- ☁️ **Provider-agnostic** storage layer - swap S3 for Azure with one env var
-- 📋 **JSON-structured logs** parsed natively by Grafana Loki
-- 🛡️ **ZIP path-traversal protection** during restore
-- 🔒 **Dual Azure auth** - shared-key or service-principal
-- 📊 **Prometheus metrics** pushed to Pushgateway after every run
+
+* **Export** Kubernetes data to remote storage.
+* **Import** backed-up data to Kubernetes.
+* **Backups Isolation:** Each Kubernetes namespace is backed up into a dedicated space.
+* **Ensure data Integrity:** Scale-down running workload, backup their volumes and restore the workload.
+* **Cloud-Native & Minimalist:** Light footprint, easy to install, and fully customizable from standard Kubernetes manifests without third-party CRD dependencies.
+
+
+## Requirements
+* Remote storage (Azure Blob Storage, S3 etc...), with credentials
+* Working Kubernetes cluster
+
 
 ## Installation
-### Install from sources
-* create venv
-  ```
-  python -m .venv
-  source .venv/bin/activate
-  ```
-
-* install dependencies
-  ```
-  pip install --upgrade pip
-  pip install -r requirements.txt
-  ```
-
-* create `.env` file
-  * AWS/S3
+* install CLI
+  * create venv
     ```
-    tofill
+    python -m .venv
+    source .venv/bin/activate
     ```
 
-  * Azure Blob Storage (shared-key)
+  * install dependencies
     ```
-    tofill
+    pip install --upgrade pip
+    pip install -r requirements.txt
     ```
 
-* run
-  ```
-  python -m src.main
-  ```
-
-<!-- ## Install locally with Docker
-* build
-  ```
-  docker build . --tag clustersnap:local
-  ```
-
-* run
-  ```
-  docker run clustersnap:local
-  ``` -->
-
-## Install on Kubernetes (pod)
-* create secret to pull image
-  ```
-  kubectl create secret docker-registry registry-auth-clustersnap \
-    --docker-server=ghcr.io \
-    --docker-username=GITHUB_ACCOUNT \
-    --docker-password=GITHUB_PAT \
-    --docker-email=GITHUB_ACCOUNT
-  ```
-* create secret for remote storage access
-  * edit `src/templates/backup.secret.yaml` with your own config
-  * apply
+* create required Kubernetes objects
+  * `pullImage` secret
     ```
-    NAMESPACE=tenant-test0 envsubst < templates/backup.secret.yaml | kubectl apply -f -
+    kubectl create secret docker-registry registry-auth-clustersnap \
+      --docker-server=ghcr.io \
+      --docker-username=GITHUB_ACCOUNT \
+      --docker-password=GITHUB_PAT \
+      --docker-email=GITHUB_ACCOUNT
     ```
-* create pod
-  ```
-  NAMESPACE=tenant-test0 envsubst < tests/resources_test.yaml | kubectl apply -f -
-  ```
+
+  * `config` Secret
+    * edit `src/templates/backup.secret.yaml` with your own config
+    * apply
+      ```
+      NAMESPACE=YOUR_NAMESPACE envsubst < templates/backup.secret.yaml | kubectl apply -f -
+      ```
+
+  * `backup-map` ConfigMap
+    > Note: this ConfigMap is used to orchestrate the backup. \
+    > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it.
+    ```
+    python -m src.master -c KUBECTL_CONTEXT -rm
+    ```
 
 ## Usage
-* local
+> Ensure required secrets & configmap are created
+### Kubernetes
+* create pod (& required resources such as RBAC etc...)
 ```
-python -m src.main --c CONTEXT -n NAMESPACE
+NAMESPACE=YOUR_NAMESPACE envsubst < tests/resources_test.yaml | kubectl apply -f -
+```
+* wait for it to end...
+
+### Local CLI
+* backup cluster-wide
+```
+python -m src.master -c KUBECTL_CONTEXT
 ```
 
-* docker/kubernetes
-just run the image
+* backup given namespace
+```
+python -m src.master -c KUBECTL_CONTEXT -n NAMESPACE
+```
 
 
 ## Developpers
 ### Architecture
-```
-clustersnap/
-├── src/
-│   ├── main.py               # Entrypoint for CLI & Kubernetes main pod
-│   ├── worker.py             # Entrypoint for Kubernetes job pods
-│   └── helpers/
-│       ├── kubernetes.py     # Kubernetes class
-```
+* `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
+* `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & sync it to remote storage)
+* `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
+
 
 ### Workflow of export
 ```

@@ -16,7 +16,7 @@ def get_backup_map(kube) -> dict:
 
 
 def backup_map_scanner(kube, target_namespaces: list) -> dict:
-    """Scan the cluster to get a YAML map of what will be backuped."""
+    """Scan the cluster to get a YAML map to orchestrate the backups."""
     map_data = {
         "cluster": kube.get_cluster_name(),
         "namespaces": []
@@ -24,24 +24,54 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
 
     print(f"cluster: {kube.get_cluster_name()}")
     print(f"namespaces:")
+    original_ns = kube.namespace
     
     for ns in target_namespaces:
         kube.namespace = ns
-        print(f"- name: {kube.get_namespace()}")
+        current_ns = kube.get_namespace()
+        print(f"- name: {current_ns}")
         
         ns_data = {
-            "name": kube.get_namespace(),
+            "name": current_ns,
+            "workloads": [],  # <--- Nouvelle section pour conserver l'état des replicas
             "claims": []
         }
+        
+        workload_list = set()
 
-        pvcs = kube.list_pvc()
-        if not pvcs:
+        pvc_list = kube.list_pvc()
+        if not pvc_list:
             print(f"   claims: []")
             map_data["namespaces"].append(ns_data)
             continue
 
+        # Collect workload replicas
+        for pvc in pvc_list:
+            mounts = kube.get_pvc(pvc['name'])
+            if mounts:
+                for m in mounts:
+                    resource_str = m['resource']  # ex: "StatefulSet/keycloak-postgresql"
+                    if resource_str not in workload_list:
+                        workload_list.add(resource_str)
+                        resource_type, resource_name = resource_str.split('/')
+                        
+                        # Récupération live du nombre de replicas via ton wrapper kube
+                        replicas = kube.get_replicas(resource_type, resource_name)
+                        
+                        ns_data["workloads"].append({
+                            "resource": resource_str,
+                            "replicas": replicas
+                        })
+
+        print(f"   workloads:")
+        for wl in ns_data["workloads"]:
+            print(f"    - resource: {wl['resource']}")
+            print(f"      replicas: {wl['replicas']}")
+
+
+        # Collect PVC
         print(f"   claims:")
-        for pvc in pvcs:
+        for pvc in pvc_list:
             print(f"    - name: {pvc['name']}")
             print(f"      status: {pvc['status']}")
             print(f"      capacity: {pvc['capacity']}")
@@ -79,4 +109,5 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             ns_data["claims"].append(pvc_data)
         map_data["namespaces"].append(ns_data)
 
+    kube.namespace = original_ns
     return map_data

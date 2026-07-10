@@ -25,7 +25,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
     print(f"starting backup job: {job_name}")
 
     project_root = Path(__file__).resolve().parents[2]
-    template_path = f"{project_root}/templates/backup.job.yaml"
+    template_path = f"{project_root}/templates/exporter.job.yaml"
     try:
         with open(template_path, "r") as f:
             yaml_content = f.read()

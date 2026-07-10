@@ -22,7 +22,7 @@ spec:
         - name: backup-worker
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
-          command: ["python", "-m", "src.worker"]
+          command: ["python", "-m", "src.exporter"]
           args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}"]
           resources:
             requests:
