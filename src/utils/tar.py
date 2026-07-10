@@ -11,10 +11,10 @@ class TarGenerator:
         self.target_path = target_path
         self.chunk_size = 65536 # Max data quantity in Ko
 
-    def _write_tar(self, pipe_write):
+    def _write_tar(self, fileobj):
         """Worker function executed in a separate thread to feed the pipe."""
         # Wrap the pipe's write file descriptor into a file object
-        with open(pipe_write, "wb") as fileobj:
+        with fileobj:
             with tarfile.open(fileobj=fileobj, mode="w:gz") as tar:
                 # tar.add writes sequentially into the pipe, avoiding massive RAM usage
                 tar.add(self.target_path, arcname=os.path.basename(self.target_path))
@@ -22,12 +22,12 @@ class TarGenerator:
     def __iter__(self):
         pipe_read, pipe_write = os.pipe()
 
-        # Start the compression process in a dedicated worker thread
-        writer_thread = threading.Thread(target=self._write_tar, args=(pipe_write,))
-        writer_thread.start()
+        # Wrap the pipe's write file descriptor into a file object safely before starting the thread
+        fileobj = open(pipe_write, "wb")
 
-        # Close the write descriptor in the main thread (only the worker thread should write)
-        os.close(pipe_write)
+        # Start the compression process in a dedicated worker thread
+        writer_thread = threading.Thread(target=self._write_tar, args=(fileobj,))
+        writer_thread.start()
 
         try:
             # Read from the pipe sequentially
