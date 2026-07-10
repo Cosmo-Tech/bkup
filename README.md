@@ -1,7 +1,7 @@
 # ClusterSnap
 **Cloud-Agnostic Kubernetes Backup Tool**
 
-> Clustersnap is a lightweight, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
+> Clustersnap is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
 
 * **Export** Kubernetes data to remote storage.
@@ -82,12 +82,11 @@ python -m src.master -c KUBECTL_CONTEXT -n NAMESPACE
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
 
 
-### Workflow of export
-```
-Clustersnap -> Look for existing Deployments/Statefuleset -> List attached PVC -> List volumes in each PVC
-```
+### Workflows
+#### export
+tofill
 
-### Workflow of import
+#### import
 tofill
 
 ## License
