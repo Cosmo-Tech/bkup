@@ -36,6 +36,7 @@ spec:
               mountPath: "{{ MOUNTED_PATH }}"
               readOnly: true
           env:
+
             - name: STORAGE_ADDRESS
               valueFrom:
                 secretKeyRef:
@@ -54,6 +55,7 @@ spec:
                   name: clustersnap-config
                   key: storage-password
                   optional: false
+
             - name: CLUSTER_NAME
               valueFrom:
                 secretKeyRef:
@@ -62,10 +64,8 @@ spec:
                   optional: false
             - name: NAMESPACE
               valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: namespace
-                  optional: false
+                fieldRef:
+                  fieldPath: metadata.namespace
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:

@@ -203,9 +203,14 @@ def main():
     parser.add_argument("-m", "--map", action="store_true", help="Get the backup map")
     args = parser.parse_args()
 
-    cluster_name = args.context
-    namespace = args.namespace
 
+    cluster_name_env = os.getenv("CLUSTER_NAME")
+    namespace_env = os.getenv("NAMESPACE")
+
+    cluster_name = cluster_name_env if cluster_name_env else args.context
+    namespace = namespace_env if namespace_env else args.namespace
+
+    
     # # Export env to use from YAML templates 
     # os.environ["CLUSTER_NAME"] = cluster_name
     # os.environ["NAMESPACE"] = namespace
@@ -219,8 +224,8 @@ def main():
     #     print("error: Namespace must be defined via NAMESPACE env or --namespace arg.")
     #     sys.exit(1)
 
-    # for key, value in os.environ.items():
-    #     print('{}: {}'.format(key, value))
+    for key, value in os.environ.items():
+        print('{}: {}'.format(key, value))
 
     kube = Kubernetes(context=cluster_name, namespace=namespace)
     kube_client_sigkill = kube

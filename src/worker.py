@@ -53,6 +53,8 @@ def main():
     for key, value in os.environ.items():
         print('{}: {}'.format(key, value))
 
+
+
     if not storage_address or not storage_username:
         print("error: STORAGE_ADDRESS or STORAGE_USERNAME environment variable is missing.")
         sys.exit(1)

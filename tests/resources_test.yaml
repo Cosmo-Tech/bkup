@@ -8,6 +8,17 @@ spec:
     - name: clustersnap
       image: ghcr.io/cosmo-tech/clustersnap:latest
       imagePullPolicy: Always
+      env:
+        - name: CLUSTER_NAME
+          valueFrom:
+            secretKeyRef:
+              name: clustersnap-config
+              key: cluster-name
+              optional: false
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
   imagePullSecrets:
     - name: registry-auth-clustersnap
   serviceAccountName: clustersnap
