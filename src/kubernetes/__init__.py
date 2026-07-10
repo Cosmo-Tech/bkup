@@ -25,25 +25,43 @@ class Kubernetes:
             print(f"error: {e}")
 
 
-    def get_context(self) -> str:
-        return self.context
+    # def get_context(self) -> str:
+    #     return self.context
 
 
     def get_cluster_name(self) -> str:
-        return self.context.lower().strip()
+        # CLI
+        if self.context:
+            return self.context.lower().strip()
+        
+        # Kubernetes pod
+        cluster_name = os.environ.get("CLUSTER_NAME")
+        if cluster_name:
+            return cluster_name.lower().strip()
 
 
     def get_namespace(self) -> str:
-        return self.namespace
+        # CLI
+        if self.namespace:
+            return self.namespace
 
-
-    def get_runtime_namespace(self) -> str:
-        """Get namespace during execution"""
+        # Kubernetes pod
         ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-        if not os.path.exists(ns_path):
-            raise RuntimeError("critical: Kubernetes namespace execution path missing. Aborting.")
-        with open(ns_path, "r") as f:
-            return f.read().strip()
+        if os.path.exists(ns_path):
+            with open(ns_path, "r") as f:
+                return f.read().strip()
+
+        # # Fallback
+        # return os.environ.get("NAMESPACE", "default")
+
+
+    # def get_runtime_namespace(self) -> str:
+    #     """Get namespace during execution"""
+    #     ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+    #     if not os.path.exists(ns_path):
+    #         raise RuntimeError("critical: Kubernetes namespace execution path missing. Aborting.")
+    #     with open(ns_path, "r") as f:
+    #         return f.read().strip()
 
 
     def check_secret_exists(self, secret: str) -> bool:

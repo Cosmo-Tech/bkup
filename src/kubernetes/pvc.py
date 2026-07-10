@@ -3,10 +3,10 @@ import time
 
 def list_pvc(kube) -> list:
     """List all PVC of a namespace"""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     pvc_list = []
     try:
-        response = kube.client_corev1.list_namespaced_persistent_volume_claim(namespace=current_ns)
+        response = kube.client_corev1.list_namespaced_persistent_volume_claim(namespace=namespace)
         for pvc in response.items:
             pvc_list.append({
                 "name": pvc.metadata.name,
@@ -21,11 +21,11 @@ def list_pvc(kube) -> list:
 
 def get_pvc(kube, pvc_name: str) -> list:
     """Look for PVC from Deployments and StatefulSets"""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     targets = []
     try:
         # Deployments
-        deployments = kube.client_appsv1.list_namespaced_deployment(namespace=current_ns)
+        deployments = kube.client_appsv1.list_namespaced_deployment(namespace=namespace)
         for d in deployments.items:
             mounts = _list_pvc_mount_points(pvc_name, d.spec.template.spec)
             for m in mounts:
@@ -33,7 +33,7 @@ def get_pvc(kube, pvc_name: str) -> list:
                 targets.append(m)
 
         # StatefulSets
-        statefulsets = kube.client_appsv1.list_namespaced_stateful_set(namespace=current_ns)
+        statefulsets = kube.client_appsv1.list_namespaced_stateful_set(namespace=namespace)
         for s in statefulsets.items:
             mounts = _list_pvc_mount_points(pvc_name, s.spec.template.spec)
             for m in mounts:
@@ -74,13 +74,13 @@ def _list_pvc_mount_points(pvc_name: str, pod_spec) -> list:
 
 def get_replicas(kube, resource_type: str, name: str) -> int:
     """Get replicas quantity of a Statefulset or Deployment"""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     try:
         if resource_type.lower() == "statefulset":
-            sts = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+            sts = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=namespace)
             return sts.spec.replicas
         elif resource_type.lower() == "deployment":
-            deploy = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+            deploy = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=namespace)
             return deploy.spec.replicas
         else:
             print(f"error: unknown resource type '{resource_type}'")
@@ -92,14 +92,14 @@ def get_replicas(kube, resource_type: str, name: str) -> int:
 
 def scale_replicas(kube, resource_type: str, name: str, replicas: int) -> bool:
     """Scale replicas quantity of a Statefulset or Deployment"""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     body = {"spec": {"replicas": replicas}}
     try:
         if resource_type.lower() == "statefulset":
-            kube.client_appsv1.patch_namespaced_stateful_set(name=name, namespace=current_ns, body=body)
+            kube.client_appsv1.patch_namespaced_stateful_set(name=name, namespace=namespace, body=body)
             return True
         elif resource_type.lower() == "deployment":
-            kube.client_appsv1.patch_namespaced_deployment(name=name, namespace=current_ns, body=body)
+            kube.client_appsv1.patch_namespaced_deployment(name=name, namespace=namespace, body=body)
             return True
         else:
             print(f"error: unknown resource type '{resource_type}'")
@@ -111,7 +111,7 @@ def scale_replicas(kube, resource_type: str, name: str, replicas: int) -> bool:
 
 def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120) -> bool:
     """Blocks the execution until replicas are scaled to 0"""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     
     resource = f"{resource_type}/{name}"
     print(f"waiting for {resource} to be fully stopped...")
@@ -120,9 +120,9 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
     while time.time() - start_time < timeout:
         try:
             if resource_type.lower() == "statefulset":
-                res = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=current_ns)
+                res = kube.client_appsv1.read_namespaced_stateful_set(name=name, namespace=namespace)
             elif resource_type.lower() == "deployment":
-                res = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=current_ns)
+                res = kube.client_appsv1.read_namespaced_deployment(name=name, namespace=namespace)
             else:
                 print(f"error: unknown resource type '{resource_type}'")
                 return False
@@ -141,10 +141,10 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
 
 def get_node_name(kube, pvc_name: str) -> str:
     """Get node name where the PVC is attached."""
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
     try:
         # get PV name from the PVC
-        pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=current_ns)
+        pvc_info = kube.client_corev1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=namespace)
         pv_name = pvc_info.spec.volume_name
         if not pv_name:
             return None
@@ -179,7 +179,7 @@ def get_node_name(kube, pvc_name: str) -> str:
                         return expr.values[0]
 
         # STRATEGY 3 : Try to get from Pod
-        pods = kube.client_corev1.list_namespaced_pod(namespace=current_ns)
+        pods = kube.client_corev1.list_namespaced_pod(namespace=namespace)
         for pod in pods.items:
             if pod.spec.volumes:
                 for vol in pod.spec.volumes:

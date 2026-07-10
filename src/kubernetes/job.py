@@ -13,12 +13,12 @@ def get_job_name(kube, pvc_name: str) -> str:
 def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) -> bool:
     """Create a Kubernetes job to run backups"""
 
-    current_ns = kube.get_namespace()
-    cluster_context = kube.get_cluster_name()
+    cluster_name = kube.get_cluster_name()
+    namespace = kube.get_namespace()
 
     secret_required = "clustersnap-config"
     if not kube.check_secret_exists(secret_required):
-        print(f"error: Secret '{secret_required}' is missing in namespace '{current_ns}'. Cancelling backup job.")
+        print(f"error: Secret '{secret_required}' is missing in namespace '{namespace}'. Cancelling backup job.")
         return False
 
     job_name = kube.get_job_name(pvc_name)
@@ -30,7 +30,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
         with open(template_path, "r") as f:
             yaml_content = f.read()
 
-        yaml_content = yaml_content.replace("{{ NAMESPACE }}", current_ns)
+        yaml_content = yaml_content.replace("{{ NAMESPACE }}", namespace)
         yaml_content = yaml_content.replace("{{ JOB_NAME }}", job_name)
         yaml_content = yaml_content.replace("{{ PVC_NAME }}", pvc_name)
         yaml_content = yaml_content.replace("{{ MOUNTED_PATH }}", mounted_path)
@@ -40,7 +40,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
 
         if "metadata" not in job_dict:
             job_dict["metadata"] = {}
-        job_dict["metadata"]["namespace"] = current_ns
+        job_dict["metadata"]["namespace"] = namespace
 
         try:
             containers = job_dict["spec"]["template"]["spec"]["containers"]
@@ -49,7 +49,7 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
                     container["env"] = []
                 container["env"].append({
                     "name": "CLUSTER_NAME",
-                    "value": str(cluster_context)
+                    "value": str(cluster_name)
                 })
         except KeyError as e:
             print(f"warn: {e}")
@@ -64,11 +64,11 @@ def create_backup_job(kube, pvc_name: str, mounted_path: str, node_name: str) ->
 def delete_backup_job(kube, pvc_name: str) -> bool:
     """Delete a Kubernetes backup job"""
 
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
 
     job_name = kube.get_job_name(pvc_name)
     try:
-        kube.client_batchv1.delete_namespaced_job(name=job_name, namespace=current_ns, propagation_policy="Background")
+        kube.client_batchv1.delete_namespaced_job(name=job_name, namespace=namespace, propagation_policy="Background")
         print(f"  Old job '{job_name}' successfully removed.")
         return True
     except ApiException as e:
@@ -81,7 +81,7 @@ def delete_backup_job(kube, pvc_name: str) -> bool:
 def wait_for_jobs_deletion(kube, pvc_list: list) -> bool:
     """Hook to wait for a job to be deleted"""
 
-    current_ns = kube.get_namespace()
+    namespace = kube.get_namespace()
 
     jobs_to_wait = [get_job_name(kube, pvc) for pvc in pvc_list]
     print(f"  Waiting for {len(jobs_to_wait)} old jobs to be fully purged from cluster...", end="", flush=True)
@@ -92,7 +92,7 @@ def wait_for_jobs_deletion(kube, pvc_list: list) -> bool:
         active_jobs = []
         for job_name in jobs_to_wait:
             try:
-                kube.client_batchv1.read_namespaced_job(name=job_name, namespace=current_ns)
+                kube.client_batchv1.read_namespaced_job(name=job_name, namespace=namespace)
                 active_jobs.append(job_name)
             except ApiException as e:
                 if e.status == 404:

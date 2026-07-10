@@ -55,7 +55,6 @@ spec:
                   name: clustersnap-config
                   key: storage-password
                   optional: false
-
             - name: CLUSTER_NAME
               valueFrom:
                 secretKeyRef:

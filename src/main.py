@@ -37,14 +37,12 @@ def restore_production_on_signal(signum, frame):
 
 
 def get_backup_map(kube: Kubernetes):
-    """
-    Get a YAML map of what will be backuped
-    """
-    current_ns = kube.get_namespace()
+    """Get a YAML map of what will be backuped"""
+    namespace = kube.get_namespace()
 
-    print(f"context: {kube.get_context()}")
+    print(f"cluster: {kube.get_cluster_name()}")
     print(f"namespaces:")
-    print(f"- name: {current_ns}")
+    print(f"- name: {namespace}")
 
     pvcs = kube.list_pvc()
     if not pvcs:
