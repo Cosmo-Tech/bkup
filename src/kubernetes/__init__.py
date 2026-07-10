@@ -56,14 +56,15 @@ class Kubernetes:
         # # Fallback
         # return os.environ.get("NAMESPACE", "default")
 
-
-    # def get_runtime_namespace(self) -> str:
-    #     """Get namespace during execution"""
-    #     ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-    #     if not os.path.exists(ns_path):
-    #         raise RuntimeError("critical: Kubernetes namespace execution path missing. Aborting.")
-    #     with open(ns_path, "r") as f:
-    #         return f.read().strip()
+    def list_namespaces(self) -> list:
+        """List namespaces in the cluster"""
+        try:
+            ns_list = [ns.metadata.name for ns in self.client_corev1.list_namespace().items]
+            return ns_list
+            
+        except Exception as e:
+            print(f"error listing namespaces: {e}")
+            return []
 
 
     def check_secret_exists(self, secret: str) -> bool:

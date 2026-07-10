@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: clustersnap
+  name: clustersnap-master
   namespace: ${NAMESPACE}
 spec:
   containers:
-    - name: clustersnap
+    - name: clustersnap-master
       image: ghcr.io/cosmo-tech/clustersnap:latest
       imagePullPolicy: Always
       env:
