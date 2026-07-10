@@ -49,29 +49,36 @@
 
   * `backup-map` ConfigMap
     > Note: this ConfigMap is used to orchestrate the backup. \
-    > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it.
+    > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it. \
+    > You can also read it with `python -m src.master -c KUBECTL_CONTEXT -gm`
     ```
     python -m src.master -c KUBECTL_CONTEXT -rm
     ```
+    
 
 ## Usage
 > Ensure required secrets & configmap are created
 ### Kubernetes
-* create pod (& required resources such as RBAC etc...)
+* Create pod (& required resources such as RBAC etc...)
 ```
 NAMESPACE=YOUR_NAMESPACE envsubst < tests/resources_test.yaml | kubectl apply -f -
 ```
-* wait for it to end...
+* Wait for it to end...
 
 ### Local CLI
-* backup cluster-wide
+* Run cluster-wide backup
 ```
 python -m src.master -c KUBECTL_CONTEXT
 ```
 
-* backup given namespace
+* Run namespaced backup
 ```
 python -m src.master -c KUBECTL_CONTEXT -n NAMESPACE
+```
+
+* Display help
+```
+python -m src.master --help
 ```
 
 
@@ -83,10 +90,10 @@ python -m src.master -c KUBECTL_CONTEXT -n NAMESPACE
 
 
 ### Workflows
-#### export
+#### Export
 tofill
 
-#### import
+#### Import
 tofill
 
 ## License
