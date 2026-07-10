@@ -186,10 +186,6 @@ def wait_for_volume_detachment(kube, pvc_name: str) -> bool:
     return False
 
 
-import json
-
-import json
-
 def get_node_name(kube, pvc_name: str) -> str:
     """
     Get node name where the PVC is attached by reading the cached map 

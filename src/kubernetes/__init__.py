@@ -60,6 +60,20 @@ class Kubernetes:
         # # Fallback
         # return os.environ.get("NAMESPACE", "default")
 
+
+    def get_master_namespace(self) -> str:
+        """
+        Determines the operational namespace for clustersnap.
+        Returns the execution namespace of the master pod if in-cluster,
+        or strictly forces 'default' if run from CLI.
+        """
+        ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+        if self.is_in_cluster and os.path.exists(ns_path):
+            with open(ns_path, "r") as f:
+                return f.read().strip()
+        return "default"
+
+
     def list_namespaces(self) -> list:
         """List namespaces in the cluster"""
         try:
@@ -81,14 +95,16 @@ class Kubernetes:
 
     def get_configmap(self, name: str, namespace: str) -> dict:
         """Reads a generic ConfigMap and returns its JSON content as a dictionary."""
+        target_ns = namespace if namespace else self.get_master_namespace()
+        
         try:
-            cm = self.client_corev1.read_namespaced_config_map(name=name, namespace=namespace)
+            cm = self.client_corev1.read_namespaced_config_map(name=name, namespace=target_ns)
             filename = f"{name}.json"
             if cm.data and filename in cm.data:
                 return json.loads(cm.data[filename])
         except ApiException as e:
             if e.status != 404:
-                print(f"  warn: failed to read ConfigMap '{name}': {e}")
+                print(f"  warn: failed to read ConfigMap '{name}' from namespace '{target_ns}': {e}")
         except Exception as e:
             print(f"  warn: unexpected error while loading ConfigMap '{name}': {e}")
             
@@ -97,7 +113,8 @@ class Kubernetes:
 
     def save_to_configmap(self, name: str, namespace: str, data: dict):
         """Saves a generic dictionary into a Kubernetes ConfigMap as serialized JSON."""
-        # On sérialise les données passées en argument
+        target_ns = namespace if namespace else self.get_master_namespace()
+        
         cm_data = {f"{name}.json": json.dumps(data, indent=2)}
         
         body = {
@@ -105,24 +122,23 @@ class Kubernetes:
             "kind": "ConfigMap",
             "metadata": {
                 "name": name,
-                "namespace": namespace
+                "namespace": target_ns
             },
             "data": cm_data
         }
         
         try:
-            self.client_corev1.replace_namespaced_config_map(name=name, namespace=namespace, body=body)
+            self.client_corev1.replace_namespaced_config_map(name=name, namespace=target_ns, body=body)
         except ApiException as e:
             if e.status == 404:
                 try:
-                    self.client_corev1.create_namespaced_config_map(namespace=namespace, body=body)
+                    self.client_corev1.create_namespaced_config_map(namespace=target_ns, body=body)
                 except Exception as create_err:
-                    print(f"  error: cannot create ConfigMap '{name}': {create_err}")
+                    print(f"  error: cannot create ConfigMap '{name}' in namespace '{target_ns}': {create_err}")
             else:
-                print(f"  error: failed to replace ConfigMap '{name}': {e}")
+                print(f"  error: failed to replace ConfigMap '{name}' in namespace '{target_ns}': {e}")
         except Exception as e:
             print(f"  warn: unexpected error while storing ConfigMap '{name}': {e}")
-
 
 
     # ------------------

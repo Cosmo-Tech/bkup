@@ -124,9 +124,6 @@ def run_backup_job(kube: Kubernetes, namespace: str):
             kube.wait_for_volume_detachment(info["pvc_name"])
 
 
-    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{node_name}")
-
-
     # ==================================================
     # PHASE 3 : TRIGGER CONCURRENT BACKUPS
     # ==================================================
@@ -179,7 +176,8 @@ def main():
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace (comma-separated or 'all')")
     parser.add_argument("-j", "--job", action="store_true", help="Run a backup job")
-    parser.add_argument("-m", "--map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
+    parser.add_argument("-gm", "--get-map", action="store_true", help="Display backup-map")
+    parser.add_argument("-rm", "--refresh-map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
     args = parser.parse_args()
 
 
@@ -207,21 +205,25 @@ def main():
 
 
     if args.job:
-        bpm.get_backup_map(kube, target_namespaces)
+        bpm.get_backup_map(kube)
         for ns in target_namespaces:
             kube.namespace = ns
             run_backup_job(kube, namespace=ns)
 
-    elif args.map:
+    elif args.refresh_map:
         backup_map = bpm.backup_map_scanner(kube, target_namespaces)
         kube.save_to_configmap(
             name="clustersnap-backup-map",
-            namespace=kube.get_namespace(),
+            namespace=kube.get_master_namespace(),
             data=backup_map
         )
 
+    elif args.get_map:
+        backup_map = bpm.get_backup_map(kube)
+        print(json.dumps(backup_map, indent=2))
+
     else:
-        print('please run with --job or --map (--help for more info)')
+        print('error: please --help for more info')
 
 
 if __name__ == "__main__":
