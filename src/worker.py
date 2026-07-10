@@ -42,13 +42,14 @@ def main():
     parser.add_argument("--pvc", type=str, required=True, help="Name of the PVC")
     args = parser.parse_args()
 
+    # Env var from YAML template
     storage_address = os.getenv("STORAGE_ADDRESS")
     storage_username = os.getenv("STORAGE_USERNAME")
     storage_password = os.getenv("STORAGE_PASSWORD")
     cluster_name = os.getenv("CLUSTER_NAME")
     namespace = os.getenv("NAMESPACE")
 
-    
+
     for key, value in os.environ.items():
         print('{}: {}'.format(key, value))
 
@@ -60,8 +61,7 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
-    # kube = Kubernetes(context=None, namespace=None)
-    kube = Kubernetes()
+    kube = Kubernetes(context=cluster_name, namespace=namespace)
 
     # ------------------------------
     # STORAGE PROVIDER DETECTION

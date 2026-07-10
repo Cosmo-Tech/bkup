@@ -7,7 +7,7 @@ import src.kubernetes.job as job
 
 class Kubernetes:
 
-    def __init__(self, context: str = None, namespace: str = None):
+    def __init__(self, context: str, namespace: str):
         self.context = context
         self.namespace = namespace
         try:

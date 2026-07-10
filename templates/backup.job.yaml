@@ -55,9 +55,17 @@ spec:
                   key: storage-password
                   optional: false
             - name: CLUSTER_NAME
-              value: "{{ CLUSTER_NAME }}"
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: cluster-name
+                  optional: false
             - name: NAMESPACE
-              value: "{{ NAMESPACE }}"
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: namespace
+                  optional: false
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:

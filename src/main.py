@@ -206,9 +206,9 @@ def main():
     cluster_name = args.context
     namespace = args.namespace
 
-    # Export env to use from YAML templates 
-    os.environ["CLUSTER_NAME"] = cluster_name
-    os.environ["NAMESPACE"] = namespace
+    # # Export env to use from YAML templates 
+    # os.environ["CLUSTER_NAME"] = cluster_name
+    # os.environ["NAMESPACE"] = namespace
 
 
     # if not cluster_name:
