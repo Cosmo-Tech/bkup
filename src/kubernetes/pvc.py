@@ -139,6 +139,53 @@ def wait_for_scale_down(kube, resource_type: str, name: str, timeout: int = 120)
     return False
 
 
+    def wait_for_volume_detachment(kube: Kubernetes, pvc_name: str, timeout: int = 120, check_interval: int = 5) -> bool:
+        """Block execution untils the PVC is detached from its node"""
+
+        print(f"  info: waiting for volume of PVC '{pvc_name}' to be fully detached...")
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                pvc_obj = kube.client_corev1.read_namespaced_persistent_volume_claim(
+                    name=pvc_name, 
+                    namespace=kube.get_namespace()
+                )
+                pv_name = pvc_obj.spec.volume_name
+                
+                if not pv_name:
+                    return True
+
+                attachments = kube.client_corev1.api_client.call_api(
+                    '/apis/storage.k8s.io/v1/volumeattachments', 'GET',
+                    auth_settings=['BearerToken'], response_type='object'
+                )[0]
+                
+                is_attached = False
+                for item in attachments.get('items', []):
+                    spec = item.get('spec', {})
+                    status = item.get('status', {})
+                    
+                    if spec.get('volumeName') == pv_name:
+                        # Si l'attachement est marqué comme "attached" et n'a pas de deletionTimestamp
+                        if status.get('attached', False) and not item.get('metadata', {}).get('deletionTimestamp'):
+                            is_attached = True
+                            break
+                
+                if not is_attached:
+                    print(f"    -> Volume for PVC '{pvc_name}' is successfully detached and ready!")
+                    return True
+                    
+            except Exception as e:
+                # Si l'accès aux VolumeAttachments échoue (ex: RBAC restrictif), on fallback sur une gestion d'erreur légère
+                print(f"    warn: error checking attachment status ({e}), retrying...")
+                
+            time.sleep(check_interval)
+            
+        print(f"  warn: timeout reached while waiting for PVC '{pvc_name}' to detach. Proceeding anyway...")
+        return False
+
+
 # def get_node_name(kube, pvc_name: str) -> str:
 #     """Get node name where the PVC is attached."""
 #     namespace = kube.get_namespace()

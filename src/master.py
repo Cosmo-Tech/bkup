@@ -150,16 +150,18 @@ def run_backup_job(kube: Kubernetes, namespace: str):
         if info["namespace"] == namespace and info["initial_replicas"] > 0:
             kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
 
+    print("\nensure PVC are not attached anymore...")
+    for resource_key, info in backup_workloads.items():
+        if info["namespace"] == namespace:
+            wait_for_volume_detachment(kube, info["pvc_name"])
+
+
     # ==================================================
     # PHASE 3 : TRIGGER CONCURRENT BACKUPS
     # ==================================================
     print("\nPHASE 3: Triggering all Kubernetes backup jobs simultaneously...")
     for resource_key, info in backup_workloads.items():
         if info["namespace"] == namespace:
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {info["namespace"]}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {info["pvc_name"]}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {info["mounted_path"]}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! {info["node_name"]}")
             kube.create_backup_job(
                 pvc_name=info["pvc_name"], 
                 mounted_path=info["mounted_path"], 

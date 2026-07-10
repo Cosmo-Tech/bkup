@@ -69,7 +69,7 @@ def delete_backup_job(kube, pvc_name: str) -> bool:
     job_name = kube.get_job_name(pvc_name)
     try:
         kube.client_batchv1.delete_namespaced_job(name=job_name, namespace=namespace, propagation_policy="Background")
-        print(f"  Old job '{job_name}' successfully removed.")
+        print(f"  old job '{job_name}' successfully removed.")
         return True
     except ApiException as e:
         if e.status == 404:
