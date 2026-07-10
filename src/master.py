@@ -3,7 +3,7 @@ import argparse
 import time
 import signal
 import os
-import json
+import yaml
 from src.kubernetes import Kubernetes
 import src.utils.backup_map as bpm
 
@@ -220,7 +220,7 @@ def main():
 
     elif args.get_map:
         backup_map = bpm.get_backup_map(kube)
-        print(json.dumps(backup_map, indent=2))
+        print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))
 
     else:
         print('error: please --help for more info')

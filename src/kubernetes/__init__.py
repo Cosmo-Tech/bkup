@@ -1,5 +1,5 @@
 import base64
-import json
+import yaml
 import os
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -94,14 +94,14 @@ class Kubernetes:
 
 
     def get_configmap(self, name: str, namespace: str) -> dict:
-        """Reads a generic ConfigMap and returns its JSON content as a dictionary."""
+        """Reads a generic ConfigMap and returns its YAML content as a dictionary."""
         target_ns = namespace if namespace else self.get_master_namespace()
         
         try:
             cm = self.client_corev1.read_namespaced_config_map(name=name, namespace=target_ns)
-            filename = f"{name}.json"
+            filename = f"{name}.yaml"  # <--- Extension modifiée en .yaml
             if cm.data and filename in cm.data:
-                return json.loads(cm.data[filename])
+                return yaml.safe_load(cm.data[filename])  # <--- Parsing YAML
         except ApiException as e:
             if e.status != 404:
                 print(f"  warn: failed to read ConfigMap '{name}' from namespace '{target_ns}': {e}")
@@ -112,10 +112,11 @@ class Kubernetes:
 
 
     def save_to_configmap(self, name: str, namespace: str, data: dict):
-        """Saves a generic dictionary into a Kubernetes ConfigMap as serialized JSON."""
+        """Saves a generic dictionary into a Kubernetes ConfigMap as serialized YAML."""
         target_ns = namespace if namespace else self.get_master_namespace()
         
-        cm_data = {f"{name}.json": json.dumps(data, indent=2)}
+        # Sérialisation en YAML propre (avec des tirets pour les listes lisibles)
+        cm_data = {f"{name}.yaml": yaml.dump(data, sort_keys=False, default_flow_style=False)}
         
         body = {
             "apiVersion": "v1",
