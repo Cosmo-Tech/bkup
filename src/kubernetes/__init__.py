@@ -9,20 +9,23 @@ class Kubernetes:
 
     def __init__(self, context: str, namespace: str):
         self.context = context
-        self.namespace = namespace
+        self.is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount")
         try:
-            # Connect from CLI (based on kubeconfig)
-            if context:
-                config.load_kube_config(context=context)
             # Connect from Kubernetes pod
-            else:
+            if self.is_in_cluster:
                 config.load_incluster_config()
+            
+            # Connect from CLI (based on kubeconfig)
+            else:
+                config.load_kube_config(context=self.context)
 
             self.client_corev1 = client.CoreV1Api()
             self.client_appsv1 = client.AppsV1Api()
             self.client_batchv1 = client.BatchV1Api()
         except Exception as e:
             print(f"error: {e}")
+
+        self.namespace = self.get_namespace(namespace)
 
 
     # def get_context(self) -> str:
@@ -66,7 +69,7 @@ class Kubernetes:
 
     def check_secret_exists(self, secret: str) -> bool:
         try:
-            self.client_corev1.read_namespaced_secret(name=secret, namespace=self.namespace)
+            self.client_corev1.read_namespaced_secret(name=secret, namespace=self.get_namespace())
             return True
         except Exception:
             return False

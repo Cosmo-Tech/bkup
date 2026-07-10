@@ -121,7 +121,7 @@ def wait_for_job_completion(kube, job_name: str) -> bool:
             print(f"error: timeout reached ({timeout}s) while waiting for job '{job_name}'.")
             return False
         try:
-            job = kube.client_batchv1.read_namespaced_job_status(name=job_name, namespace=kube.namespace)
+            job = kube.client_batchv1.read_namespaced_job_status(name=job_name, namespace=kube.get_namespace())
             status = job.status
 
             if status.succeeded and status.succeeded > 0:
