@@ -7,12 +7,8 @@ from src.storage.base import Storage
 
 class AzureStorage(Storage):
 
-    def __init__(self, kube, storage_address: str, storage_username: str, storage_password: str):
-        cluster_name = kube.get_cluster_name()
-        namespace = kube.get_namespace()
-        
-        raw_container_name = f"{cluster_name}-{namespace}"
-        self.blob_container = raw_container_name.lower().replace("_", "-").replace(".", "-")
+    def __init__(self, storage_address: str, storage_username: str, storage_password: str, root_path_target: str):
+        self.blob_container = root_path_target.lower().replace("_", "-").replace(".", "-")
         self.storage_address = storage_address
         self.storage_password = storage_password
         self.client = BlobServiceClient(
@@ -23,7 +19,7 @@ class AzureStorage(Storage):
 
 
     def _ensure_blob_container_exists(self):
-        """Creates the Azure container if it does not exist."""
+        """Creates the Azure container if not exists."""
         try:
             print(f"info: checking or creating Azure container '{self.blob_container}'...")
             self.client.create_container(name=self.blob_container)
@@ -38,15 +34,15 @@ class AzureStorage(Storage):
         date_str = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         
         # Layout: disks/pvc_name/pvc_name-timestamp.tar.gz
-        blob_name = f"disks/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
+        blob_path = f"disks/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
 
         try:
             blob_client = self.client.get_blob_client(
                 container=self.blob_container, 
-                blob=blob_name
+                blob=blob_path
             )
             
-            print(f"info: uploading directly to '{blob_name}'...")
+            print(f"info: uploading directly to '{blob_path}'...")
             
             # The Azure SDK natively supports data generators for chunked upload
             blob_client.upload_blob(data_generator, overwrite=True, max_concurrency=2)

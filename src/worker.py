@@ -5,11 +5,10 @@ import tarfile
 import io
 
 from src.storage.azure import AzureStorage
-from src.kubernetes import Kubernetes
 
 
 class TarGenerator:
-    """Pure Python on-the-fly tar.gz generator to stream data without local disk footprint."""
+    """on-the-fly tar.gz generator to stream data without local disk footprint."""
     def __init__(self, target_path: str):
         self.target_path = target_path
         self.buffer = io.BytesIO()
@@ -49,10 +48,10 @@ def main():
     cluster_name = os.getenv("CLUSTER_NAME")
     namespace = os.getenv("NAMESPACE")
 
+    root_path_target = f"{cluster_name}-{namespace}"
 
-    for key, value in os.environ.items():
-        print('{}: {}'.format(key, value))
-
+    # for key, value in os.environ.items():
+    #     print('{}: {}'.format(key, value))
 
 
     if not storage_address or not storage_username:
@@ -63,8 +62,6 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
-    kube = Kubernetes(context=cluster_name, namespace=namespace)
-
     # ------------------------------
     # STORAGE PROVIDER DETECTION
     # ------------------------------
@@ -73,7 +70,12 @@ def main():
     # Azure (example of Azure Storage endpoint : https://storageaccount.blob.core.windows.net/)
     if ".blob.core.windows.net" in storage_address:
         print("info: Azure blob storage detected.")
-        storage_provider = AzureStorage(kube, storage_address, storage_username, storage_password)
+        storage_provider = AzureStorage(
+            storage_address=storage_address,
+            storage_username=storage_username,
+            storage_password=storage_password,
+            root_path_target=root_path_target
+        )
     
     # # AWS/S3
     # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():

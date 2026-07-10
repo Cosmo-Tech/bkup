@@ -192,8 +192,6 @@ def main():
     signal.signal(signal.SIGTERM, restore_production_on_signal)
 
 
-
-
     parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace")
@@ -208,22 +206,10 @@ def main():
     cluster_name = cluster_name_env if cluster_name_env else args.context
     namespace = namespace_env if namespace_env else args.namespace
 
-    
-    # # Export env to use from YAML templates 
-    # os.environ["CLUSTER_NAME"] = cluster_name
-    # os.environ["NAMESPACE"] = namespace
 
+    # for key, value in os.environ.items():
+    #     print('{}: {}'.format(key, value))
 
-    # if not cluster_name:
-    #     print("error: Cluster name must be defined via CLUSTER_NAME env or --context arg.")
-    #     sys.exit(1)
-        
-    # if not namespace:
-    #     print("error: Namespace must be defined via NAMESPACE env or --namespace arg.")
-    #     sys.exit(1)
-
-    for key, value in os.environ.items():
-        print('{}: {}'.format(key, value))
 
     kube = Kubernetes(context=cluster_name, namespace=namespace)
     kube_client_sigkill = kube
