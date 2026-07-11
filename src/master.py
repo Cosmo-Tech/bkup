@@ -5,6 +5,7 @@ import signal
 import os
 import yaml
 from src.kubernetes import Kubernetes
+import src.utils.psql as psql
 import src.utils.backup_map as bpm
 
 backup_workloads = {}
@@ -131,22 +132,19 @@ def run_backup_job(kube: Kubernetes, namespace: str):
     for resource_key, info in backup_workloads.items():
         if info["namespace"] == namespace:
             
-            # 1. Check if the workload matches our PostgreSQL heuristic
-            from src.psql import is_postgresql_workload
-            
             mount_info = {
                 "container": info["resource_name"],
                 "resource": info["resource_type"]
             }
             
-            if is_postgresql_workload(mount_info):
+            if psql.is_postgresql_workload(mount_info):
                 print(f"  info: {resource_key} identified as PostgreSQL database. Extracting runtime details...")
                 
                 # 2. Extract the current docker image used by production to ensure version match
                 postgres_image = kube.get_workload_image(info["resource_type"], info["resource_name"])
                 
                 # 3. Read the local code of src/psql.py to format it into a string payload
-                with open("src/psql.py", "r") as f:
+                with open("src/utils/psql.py", "r") as f:
                     raw_python_code = f.read()
                 
                 # Append the final orchestration execution lines directly to the inline block

@@ -5,7 +5,8 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 import src.kubernetes.pvc as pvc
-import src.kubernetes.job as job
+import src.kubernetes.job_volume as job_volume
+import src.kubernetes.job_postgresql as job_postgresql
 
 
 class Kubernetes:
@@ -168,19 +169,30 @@ class Kubernetes:
 
 
     # ------------------
-    # job.py
+    # job_volume.py
     # ------------------
     def get_job_name(self, pvc_name: str) -> str:
-        return job.get_job_name(self, pvc_name)
+        return job_volume.get_job_name(self, pvc_name)
 
     def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str) -> bool:
-        return job.create_backup_job(self, pvc_name, mounted_path, node_name)
+        return job_volume.create_backup_job(self, pvc_name, mounted_path, node_name)
 
     def delete_backup_job(self, pvc_name: str) -> bool:
-        return job.delete_backup_job(self, pvc_name)
+        return job_volume.delete_backup_job(self, pvc_name)
 
     def wait_for_jobs_deletion(self, pvc_list: list) -> bool:
-        return job.wait_for_jobs_deletion(self, pvc_list)
+        return job_volume.wait_for_jobs_deletion(self, pvc_list)
 
     def wait_for_job_completion(self, job_name: str) -> bool:
-        return job.wait_for_job_completion(self, job_name)
+        return job_volume.wait_for_job_completion(self, job_name)
+
+
+
+    # ------------------
+    # job_postgresql.py
+    # ------------------
+    def get_workload_image(self, resource_type: str, resource_name: str) -> str:
+        return job_postgresql.get_workload_image(self, resource_type, resource_name)
+
+    def create_postgres_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, postgres_image: str, python_code: str):
+        return job_postgresql.create_postgres_backup_job(self, pvc_name, mounted_path, node_name, postgres_image, python_code)

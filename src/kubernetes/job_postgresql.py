@@ -22,7 +22,7 @@ def create_postgres_backup_job(self, pvc_name: str, mounted_path: str, node_name
     """Load the postgres job template, replace variables, and deploy to K8s control plane."""
     import yaml
 
-    template_path = "templates/postgres_exporter.job.yaml"
+    template_path = "templates/postgresql.exporter.job.yaml"
     with open(template_path, "r") as f:
         template_content = f.read()
 
