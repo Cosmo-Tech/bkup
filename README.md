@@ -93,6 +93,78 @@ python -m src.master --help
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
 
 
+### The backup-map
+#### What is it ?
+Clustersnap relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
+
+The `backup-map` is really simple:
+* consists of listing workloads (Deployments/StatefulSets) and their associated PVC if any.
+* must be generated before running Clustersnap jobs.
+* can be manually modified (and it's even recommanded to fit with your needs)
+* stored in namespace of the `Clusternap master pod` (or default namespace if Clustersnap is not running in the cluster)
+
+<br>
+
+Example of a `backup-map`
+```
+clustersnap-backup-map.yaml: |
+  cluster: example
+  namespaces:
+  - name: namespace1
+    workloads: []
+    claims: []
+  - name: namespace2
+    workloads: []
+    claims: []
+  - name: namespace3
+    workloads:
+    - resource: Deployment/workload1
+      replicas: 1
+    - resource: StatefulSet/workload2
+      replicas: 9
+    - resource: StatefulSet/postgresql
+      replicas: 1
+    claims:
+    - name: pvc-workload1
+      backup-type: volume
+      attachment-node: node-example
+      mounts:
+      - container: example
+        path: /data
+        resource: Deployment/example1
+
+    - name: pvc-workload2
+      backup-type: volume
+      attachment-node: node-example
+      mounts:
+      - container: example
+        path: /data
+        resource: StatefulSet/example2
+
+    - name: pvc-postgresql
+      backup-type: pg_dump
+      attachment-node: node-example
+      mounts:
+      - container: postgresql
+        path: /data
+        resource: StatefulSet/postgresql
+```
+
+
+#### Tweaks
+Everything in the backup-map can be tweaked, but here is a short description of the most useful keys
+
+| key                       | value         | info
+|---------------------------|---------------|------
+| workloads[]               | *empty*       | Nothing to backup
+| claim[]                   | *empty*       | Nothing to backup
+| workloads[].replicas      | *integer*     | Clustersnap must scale replicas=0 to perform the backups. This value is used to restore the right replicas quantity
+| claims[].attachment-node  | *node-name*   | Useful when data are stored on specifics nodes (and not on a remote storage), jobs must run on same nodes as PVC
+| claims[].mounts[].path    | *path*        | Mount point where to look for data to backup
+| claims[].backup-type      | **volume**    | The backup job will create a `.tar.gz containing data of the mounted paths` found in the PVC
+| claims[].backup-type      | **pg_dump**   | The backup job will use `pg_dump to create a .sql` dump of all the databases found in the PVC
+
+
 ### Workflows
 #### Volumes
 ##### Export
