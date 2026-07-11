@@ -1,4 +1,5 @@
 import json
+import yaml
 from kubernetes.client.rest import ApiException
 
 import src.utils.psql as psql
@@ -123,3 +124,28 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
 
     kube.namespace = original_ns
     return map_data
+
+
+def get_pvc_from_map(kube_client, pvc_name: str) -> list:
+    """
+    Reverse lookup utility searching for workload attachments associated 
+    with a given PVC name inside the cluster's saved backup-map ConfigMap.
+    """
+    try:
+        # Fetch the current unpacked map layout via our agnostic ConfigMap utility
+        backup_map = get_backup_map(kube_client)
+        if not backup_map or "namespaces" not in backup_map:
+            return []
+
+        # Interrogate the document hierarchy dynamically
+        for ns in backup_map["namespaces"]:
+            if "claims" in ns:
+                for claim in ns["claims"]:
+                    if claim.get("name") == pvc_name:
+                        # Return formatting structure standard compliant with master.py loops
+                        return claim.get("mounts", [])
+                        
+        return []
+    except Exception as e:
+        print(f"  warn: map reverse lookup failed for PVC '{pvc_name}': {e}")
+        return []

@@ -4,12 +4,24 @@ import time
 import signal
 import os
 import yaml
-from src.kubernetes import Kubernetes
+
+from src.kubernetes.job_volume import VolumeBackupJob
+from src.kubernetes.job_postgresql import PostgresBackupJob
 import src.utils.psql as psql
 import src.utils.backup_map as bpm
 
 backup_workloads = {}
 kube_client_sigkill = None
+
+
+
+def get_master_namespace(kube_client) -> str:
+    """Get namespace of master pod"""
+    pod_ns = kube_client.get_current_namespace_from_pod()
+    if pod_ns:
+        return pod_ns
+    
+    return "default"
 
 
 def restore_production_on_signal(signum, frame):
@@ -42,7 +54,7 @@ def restore_production_on_signal(signum, frame):
     sys.exit(1)
 
 
-def run_backup_job(kube: Kubernetes, namespace: str):
+def run_backup_job(cluster_context: str, namespace: str):
     """
     Global sequential orchestrator:
     Phase 0: Cleanup + wait for deletion of old Jobs
@@ -52,6 +64,11 @@ def run_backup_job(kube: Kubernetes, namespace: str):
     Phase 4: Restore (Scale Up) production workloads to original layout states
     """
     global backup_workloads
+    global kube_client_sigkill
+
+    # Bootstrap with a volume instance as standard baseline client
+    kube = VolumeBackupJob(context=cluster_context, namespace=namespace)
+    kube_client_sigkill = kube
 
     pvcs = kube.list_pvc()
 
@@ -136,48 +153,29 @@ def run_backup_job(kube: Kubernetes, namespace: str):
                 "container": info["resource_name"],
                 "resource": info["resource_type"]
             }
+
+            pull_secrets = kube.get_image_pull_secrets(info["resource_type"], info["resource_name"])
             
             if psql.is_postgresql_workload(mount_info):
-                print(f"  info: {resource_key} identified as PostgreSQL database. Extracting runtime details...")
+                print(f"  info: {resource_key} identified as PostgreSQL database. Routing via child worker...")
+                worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
+                postgres_image = worker.get_workload_image(info["resource_type"], info["resource_name"])
                 
-                # 2. Extract the current docker image used by production to ensure version match
-                postgres_image = kube.get_workload_image(info["resource_type"], info["resource_name"])
-                
-                # 3. Read the local code of src/psql.py to format it into a string payload
-                with open("src/utils/psql.py", "r") as f:
-                    raw_python_code = f.read()
-                
-                # Append the final orchestration execution lines directly to the inline block
-                execution_lines = (
-                    f"\n"
-                    f"from src.storage.azure import AzureStorage\n"
-                    f"import os\n"
-                    f"storage_provider = AzureStorage(\n"
-                    f"    storage_address=os.getenv('STORAGE_ADDRESS'),\n"
-                    f"    storage_username=os.getenv('STORAGE_USERNAME'),\n"
-                    f"    storage_password=os.getenv('STORAGE_PASSWORD'),\n"
-                    f"    root_path_target=f\"{{os.getenv('CLUSTER_NAME')}}-{{os.getenv('NAMESPACE')}}\"\n"
-                    f")\n"
-                    f"stream_individual_dumps(storage_provider, '{info['pvc_name']}')\n"
-                )
-                
-                # Escape characters to securely pass the Python payload inside the template shell wrapper
-                python_payload = (raw_python_code + execution_lines).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-                
-                # 4. Trigger the specialized PostgreSQL backup Job template
-                kube.create_postgres_backup_job(
+                worker.create_backup_job(
                     pvc_name=info["pvc_name"],
                     mounted_path=info["mounted_path"],
-                    node_name=node_name,
+                    node_name=info["node_name"],
                     postgres_image=postgres_image,
-                    python_code=python_payload
+                    image_pull_secrets=pull_secrets
                 )
             else:
-                # 5. Standard flat-file backup via regular TarGenerator Job template
-                kube.create_backup_job(
-                    pvc_name=info["pvc_name"], 
-                    mounted_path=info["mounted_path"], 
-                    node_name=node_name
+                print(f"  info: {resource_key} identified as standard volume. Routing via standard worker...")
+                worker = VolumeBackupJob(context=cluster_context, namespace=namespace)
+                worker.create_backup_job(
+                    pvc_name=info["pvc_name"],
+                    mounted_path=info["mounted_path"],
+                    node_name=info["node_name"],
+                    image_pull_secrets=pull_secrets
                 )
 
     # Wait for backup to end before scale back replicas
@@ -228,10 +226,10 @@ def main():
     cluster_name_env = os.getenv("CLUSTER_NAME")
     namespace_env = os.getenv("NAMESPACE")
 
-    cluster_name = cluster_name_env if cluster_name_env else args.context
+    cluster_context = cluster_name_env if cluster_name_env else args.context
     namespace_input = namespace_env if namespace_env else args.namespace
 
-    kube = Kubernetes(context=cluster_name, namespace="default")
+    kube = VolumeBackupJob(context=cluster_context, namespace=namespace_input if namespace_input and namespace_input.lower() != "all" else "default")
     kube_client_sigkill = kube
 
     # Targetted namespace
@@ -247,13 +245,13 @@ def main():
         bpm.get_backup_map(kube)
         for ns in target_namespaces:
             kube.namespace = ns
-            run_backup_job(kube, namespace=ns)
+            run_backup_job(cluster_context, namespace=ns)
 
     elif args.refresh_map:
         backup_map = bpm.backup_map_scanner(kube, target_namespaces)
         kube.save_to_configmap(
             name="clustersnap-backup-map",
-            namespace=kube.get_master_namespace(),
+            namespace=get_master_namespace(kube),
             data=backup_map
         )
 

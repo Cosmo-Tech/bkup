@@ -19,38 +19,24 @@ spec:
                     values:
                       - "{{ NODE_NAME }}"
       containers:
+        # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
         - name: postgres-backup-worker
-          image: "{{ POSTGRES_IMAGE }}"
+          image: ghcr.io/cosmo-tech/clustersnap:latest
+          imagePullPolicy: Always
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # 1. Setup temporary configuration directory
-              mkdir -p /tmp/pg_config
-              cp "{{ MOUNTED_PATH }}/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
-              
-              # 2. Inject local trust authentication
-              echo "local all all trust" > /tmp/pg_config/pg_hba_custom.conf
-              cat /tmp/pg_config/pg_hba.conf >> /tmp/pg_config/pg_hba_custom.conf 2>/dev/null || true
-              
-              # 3. Start PostgreSQL locally in background
-              # -c hba_file: uses our trusted auth file in /tmp
-              # -c external_pid_file: redirects the lock file to the ephemeral writable directory
-              # -c unix_socket_directories: redirects the Unix socket to the ephemeral writable directory
-              docker-entrypoint.sh postgres \
-                -c hba_file=/tmp/pg_config/pg_hba_custom.conf \
-                -c listen_addresses='localhost' \
-                -c external_pid_file='/var/run/postgresql/postmaster.pid' \
-                -c unix_socket_directories='/var/run/postgresql' &
-              
-              # 4. Wait for the local database engine to become ready
-              # We explicitly pass the custom socket directory to psql via -h
-              until psql -h /var/run/postgresql -U postgres -lqt 2>/dev/null; do
-                echo "Waiting for local postgres instance to wake up..."
+              # 1. Wait until the sidecar copies the native binaries and starts the database engine
+              until [ -f /mnt/bin/pg_dump ] && psql -h 127.0.0.1 -U postgres -lqt 2>/dev/null; do
+                echo "Waiting for native binaries and local database engine to become ready..."
                 sleep 2
               done
               
-              # 5. Execute your psql.py logic
-              python3 -c "{{ PYTHON_BACKUP_CODE }}"
+              # 2. Prepend the shared binary directory to PATH so Python can discover them natively
+              export PATH="/mnt/bin:$PATH"
+              
+              # 3. Execute the dedicated worker process with clean structured imports
+              python3 -m src.job_postgresql_worker --pvc "{{ PVC_NAME }}"
           resources:
             requests:
               cpu: "250m"
@@ -59,11 +45,8 @@ spec:
               cpu: "1000m"
               memory: "512Mi"
           volumeMounts:
-            - name: volume-to-backup
-              mountPath: "{{ MOUNTED_PATH }}"
-              readOnly: true
-            - name: pg-run-tmp
-              mountPath: /var/run/postgresql # Requirement dir to write socket & pid of pg_dump
+            - name: shared-binaries
+              mountPath: /mnt/bin
           env:
             - name: STORAGE_ADDRESS
               valueFrom:
@@ -90,10 +73,44 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: PGHOST
-              value: "/var/run/postgresql"
+              value: "127.0.0.1"
+
+        # --- SIDE CAR CONTAINER: Target production database providing version-matched binaries ---
+        - name: postgres-engine-provider
+          image: "{{ POSTGRES_IMAGE }}" # Dynamic image matching production layout (e.g. Bitnami, Official)
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 1. Locate and copy the version-matched database binaries to the shared directory
+              PG_BIN_DIR=$(dirname $(which pg_dump))
+              cp $PG_BIN_DIR/pg_dump /mnt/bin/
+              cp $PG_BIN_DIR/pg_dumpall /mnt/bin/
+              cp $PG_BIN_DIR/psql /mnt/bin/
+              
+              # 2. Copy shared libraries if present (critical for hardened/minimal images compatibility)
+              cp /usr/lib/libpq.so* /mnt/bin/ 2>/dev/null || true
+              cp /opt/bitnami/postgresql/lib/libpq.so* /mnt/bin/ 2>/dev/null || true
+              
+              # 3. Initialize a temporary configuration with network trust mode over loopback
+              mkdir -p /tmp/pg_config
+              cp "{{ MOUNTED_PATH }}/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
+              echo "host all all 127.0.0.1/32 trust" > /tmp/pg_config/pg_hba_custom.conf
+              cat /tmp/pg_config/pg_hba.conf >> /tmp/pg_config/pg_hba_custom.conf 2>/dev/null || true
+              
+              # 4. Start the database engine bound strictly to localhost (127.0.0.1)
+              exec docker-entrypoint.sh post²gres \
+                -c hba_file=/tmp/pg_config/pg_hba_custom.conf \
+                -c listen_addresses='127.0.0.1' \
+                -c external_pid_file='/tmp/postmaster.pid'
+          volumeMounts:
+            - name: volume-to-backup
+              mountPath: "{{ MOUNTED_PATH }}"
+              readOnly: true # Absolute read-only compliance for production snapshot preservation
+            - name: shared-binaries
+              mountPath: /mnt/bin
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:
             claimName: "{{ PVC_NAME }}"
-        - name: pg-run-tmp
-          emptyDir: {}
+        - name: shared-binaries
+          emptyDir: {} # Ephemeral scratchpad wiped immediately when the Job object is reaped

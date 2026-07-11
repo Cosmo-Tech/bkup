@@ -19,7 +19,7 @@ spec:
                     values:
                       - "{{ NODE_NAME }}"
       containers:
-        - name: backup-worker
+        - name: backup-worker-volume
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.exporter"]
@@ -41,25 +41,21 @@ spec:
                 secretKeyRef:
                   name: clustersnap-config
                   key: storage-address
-                  optional: false
             - name: STORAGE_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: clustersnap-config
                   key: storage-username
-                  optional: false
             - name: STORAGE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: clustersnap-config
                   key: storage-password
-                  optional: false
             - name: CLUSTER_NAME
               valueFrom:
                 secretKeyRef:
                   name: clustersnap-config
                   key: cluster-name
-                  optional: false
             - name: NAMESPACE
               valueFrom:
                 fieldRef:

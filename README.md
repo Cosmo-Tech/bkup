@@ -17,6 +17,10 @@
 
 
 ## Installation
+> [!CAUTION]
+> Clusternap is based on **scaling down** Kubernetes **pods** to orchestrate a clean backup plan. \
+> You should probably try it on a test environment first.
+
 * Install CLI
   * Create venv
     ```
@@ -33,7 +37,7 @@
 * Create required Kubernetes objects
   * `pullImage` secret
     ```
-    kubectl create secret docker-registry registry-auth-clustersnap \
+    kubectl create secret docker-registry clustersnap-registry-auth \
       --docker-server=ghcr.io \
       --docker-username=GITHUB_ACCOUNT \
       --docker-password=GITHUB_PAT \
