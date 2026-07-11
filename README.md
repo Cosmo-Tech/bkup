@@ -34,8 +34,9 @@
     pip install -r requirements.txt
     ```
 
-* Create required Kubernetes objects
-  * `pullImage` secret
+* Create Kubernetes objects
+  * [optional] `pullImage` secret
+    > To get the image from this repository
     ```
     kubectl create secret docker-registry clustersnap-registry-auth \
       --docker-server=ghcr.io \
@@ -93,8 +94,7 @@ python -m src.master --help
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
 
 
-### The backup-map
-#### What is it ?
+### The `backup-map`
 Clustersnap relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
 
 The `backup-map` is really simple:
@@ -103,9 +103,8 @@ The `backup-map` is really simple:
 * can be manually modified (and it's even recommanded to fit with your needs)
 * stored in namespace of the `Clusternap master pod` (or default namespace if Clustersnap is not running in the cluster)
 
-<br>
 
-Example of a `backup-map`
+#### Example
 ```
 clustersnap-backup-map.yaml: |
   cluster: example
@@ -156,8 +155,8 @@ Everything in the backup-map can be tweaked, but here is a short description of 
 
 | key                       | value         | info
 |---------------------------|---------------|------
-| workloads[]               | *empty*       | Nothing to backup
-| claim[]                   | *empty*       | Nothing to backup
+| workloads[]               | *[]*          | Nothing to backup
+| claim[]                   | *[]*          | Nothing to backup
 | workloads[].replicas      | *integer*     | Clustersnap must scale replicas=0 to perform the backups. This value is used to restore the right replicas quantity
 | claims[].attachment-node  | *node-name*   | Useful when data are stored on specifics nodes (and not on a remote storage), jobs must run on same nodes as PVC
 | claims[].mounts[].path    | *path*        | Mount point where to look for data to backup
@@ -177,7 +176,7 @@ tofill
 #### PostgreSQL
 * Run a Kubernetes job based on the original PostgreSQL image (to get same version)
 ##### Export
-* Run pg_dumpss
+* Run pg_dump
 
 ##### Import
 tofill
