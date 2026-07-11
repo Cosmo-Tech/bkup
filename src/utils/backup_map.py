@@ -1,6 +1,8 @@
 import json
 from kubernetes.client.rest import ApiException
 
+import src.utils.psql as psql
+
 
 def get_backup_map(kube) -> dict:
     """Get existing ConfigMap of the backup-map."""
@@ -33,7 +35,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         
         ns_data = {
             "name": current_ns,
-            "workloads": [],  # <--- Nouvelle section pour conserver l'état des replicas
+            "workloads": [],
             "claims": []
         }
         
@@ -50,12 +52,12 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             mounts = kube.get_pvc(pvc['name'])
             if mounts:
                 for m in mounts:
-                    resource_str = m['resource']  # ex: "StatefulSet/keycloak-postgresql"
+                    resource_str = m['resource']  # ex: "StatefulSet/postgresql"
                     if resource_str not in workload_list:
                         workload_list.add(resource_str)
                         resource_type, resource_name = resource_str.split('/')
                         
-                        # Récupération live du nombre de replicas via ton wrapper kube
+                        # Récupération live du nombre de replicas via le wrapper kube
                         replicas = kube.get_replicas(resource_type, resource_name)
                         
                         ns_data["workloads"].append({
@@ -73,33 +75,43 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         print(f"   claims:")
         for pvc in pvc_list:
             print(f"    - name: {pvc['name']}")
-            print(f"      status: {pvc['status']}")
-            print(f"      capacity: {pvc['capacity']}")
+            
+            backup_type = "volume"
+            mounts = kube.get_pvc(pvc['name'])
+            if mounts:
+                for m in mounts:
+                    if psql.is_postgresql_workload(m):
+                        backup_type = "pg_dump"
+                        break
+
+            print(f"      backup-type: {backup_type}")
+            # print(f"      status: {pvc['status']}")
+            # print(f"      capacity: {pvc['capacity']}")
             
             node_name = kube.get_node_name(pvc['name'])
-            print(f"      attachment_node: {node_name}")
+            print(f"      attachment-node: {node_name}")
 
             pvc_data = {
                 "name": pvc['name'],
-                "status": pvc['status'],
-                "capacity": pvc['capacity'],
-                "attachment_node": node_name,
+                "backup-type": backup_type,
+                # "status": pvc['status'],
+                # "capacity": pvc['capacity'],
+                "attachment-node": node_name,
                 "mounts": []
             }
 
-            mounts = kube.get_pvc(pvc['name'])
             if mounts:
                 print(f"      mounts:")
                 for m in mounts:
                     print(f"      - container: {m['container_name']}")
                     print(f"        path: {m['mount_path']}")
-                    print(f"        read_only: {m['read_only']}")
+                    # print(f"        read_only: {m['read_only']}")
                     print(f"        resource: {m['resource']}")
                     
                     pvc_data["mounts"].append({
                         "container": m['container_name'],
                         "path": m['mount_path'],
-                        "read_only": m['read_only'],
+                        # "read_only": m['read_only'],
                         "resource": m['resource']
                     })
             else:

@@ -90,11 +90,22 @@ python -m src.master --help
 
 
 ### Workflows
-#### Export
+#### Volumes
+##### Export
 tofill
 
-#### Import
+##### Import
 tofill
+
+
+#### PostgreSQL
+* Run a Kubernetes job based on the original PostgreSQL image (to get same version)
+##### Export
+* Run pg_dumpss
+
+##### Import
+tofill
+
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/clustersnap/main/LICENSE.md) for details.

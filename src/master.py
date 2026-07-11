@@ -130,11 +130,57 @@ def run_backup_job(kube: Kubernetes, namespace: str):
     print("\nPHASE 3: Triggering all Kubernetes backup jobs simultaneously...")
     for resource_key, info in backup_workloads.items():
         if info["namespace"] == namespace:
-            kube.create_backup_job(
-                pvc_name=info["pvc_name"], 
-                mounted_path=info["mounted_path"], 
-                node_name=info["node_name"]
-            )
+            
+            # 1. Check if the workload matches our PostgreSQL heuristic
+            from src.psql import is_postgresql_workload
+            
+            mount_info = {
+                "container": info["resource_name"],
+                "resource": info["resource_type"]
+            }
+            
+            if is_postgresql_workload(mount_info):
+                print(f"  info: {resource_key} identified as PostgreSQL database. Extracting runtime details...")
+                
+                # 2. Extract the current docker image used by production to ensure version match
+                postgres_image = kube.get_workload_image(info["resource_type"], info["resource_name"])
+                
+                # 3. Read the local code of src/psql.py to format it into a string payload
+                with open("src/psql.py", "r") as f:
+                    raw_python_code = f.read()
+                
+                # Append the final orchestration execution lines directly to the inline block
+                execution_lines = (
+                    f"\n"
+                    f"from src.storage.azure import AzureStorage\n"
+                    f"import os\n"
+                    f"storage_provider = AzureStorage(\n"
+                    f"    storage_address=os.getenv('STORAGE_ADDRESS'),\n"
+                    f"    storage_username=os.getenv('STORAGE_USERNAME'),\n"
+                    f"    storage_password=os.getenv('STORAGE_PASSWORD'),\n"
+                    f"    root_path_target=f\"{{os.getenv('CLUSTER_NAME')}}-{{os.getenv('NAMESPACE')}}\"\n"
+                    f")\n"
+                    f"stream_individual_dumps(storage_provider, '{info['pvc_name']}')\n"
+                )
+                
+                # Escape characters to securely pass the Python payload inside the template shell wrapper
+                python_payload = (raw_python_code + execution_lines).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+                
+                # 4. Trigger the specialized PostgreSQL backup Job template
+                kube.create_postgres_backup_job(
+                    pvc_name=info["pvc_name"],
+                    mounted_path=info["mounted_path"],
+                    node_name=node_name,
+                    postgres_image=postgres_image,
+                    python_code=python_payload
+                )
+            else:
+                # 5. Standard flat-file backup via regular TarGenerator Job template
+                kube.create_backup_job(
+                    pvc_name=info["pvc_name"], 
+                    mounted_path=info["mounted_path"], 
+                    node_name=node_name
+                )
 
     # Wait for backup to end before scale back replicas
     print("\nWaiting for backup jobs to complete before scaling back up...")
@@ -186,11 +232,6 @@ def main():
 
     cluster_name = cluster_name_env if cluster_name_env else args.context
     namespace_input = namespace_env if namespace_env else args.namespace
-
-
-    # for key, value in os.environ.items():
-    #     print('{}: {}'.format(key, value))
-
 
     kube = Kubernetes(context=cluster_name, namespace="default")
     kube_client_sigkill = kube

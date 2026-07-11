@@ -202,8 +202,8 @@ def get_node_name(kube, pvc_name: str) -> str:
             # Recherche de la correspondance pour ce PVC
             for ns_item in saved_map.get("namespaces", []):
                 for claim in ns_item.get("claims", []):
-                    if claim.get("name") == pvc_name and claim.get("attachment_node"):
-                        return str(claim.get("attachment_node"))                            
+                    if claim.get("name") == pvc_name and claim.get("attachment-node"):
+                        return str(claim.get("attachment-node"))                            
     except Exception:
         pass
 

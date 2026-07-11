@@ -1,0 +1,99 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ NAMESPACE }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - "{{ NODE_NAME }}"
+      containers:
+        - name: postgres-backup-worker
+          image: "{{ POSTGRES_IMAGE }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 1. Setup temporary configuration directory
+              mkdir -p /tmp/pg_config
+              cp "{{ MOUNTED_PATH }}/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
+              
+              # 2. Inject local trust authentication
+              echo "local all all trust" > /tmp/pg_config/pg_hba_custom.conf
+              cat /tmp/pg_config/pg_hba.conf >> /tmp/pg_config/pg_hba_custom.conf 2>/dev/null || true
+              
+              # 3. Start PostgreSQL locally in background
+              # -c hba_file: uses our trusted auth file in /tmp
+              # -c external_pid_file: redirects the lock file to the ephemeral writable directory
+              # -c unix_socket_directories: redirects the Unix socket to the ephemeral writable directory
+              docker-entrypoint.sh postgres \
+                -c hba_file=/tmp/pg_config/pg_hba_custom.conf \
+                -c listen_addresses='localhost' \
+                -c external_pid_file='/var/run/postgresql/postmaster.pid' \
+                -c unix_socket_directories='/var/run/postgresql' &
+              
+              # 4. Wait for the local database engine to become ready
+              # We explicitly pass the custom socket directory to psql via -h
+              until psql -h /var/run/postgresql -U postgres -lqt 2>/dev/null; do
+                echo "Waiting for local postgres instance to wake up..."
+                sleep 2
+              done
+              
+              # 5. Execute your psql.py logic
+              python3 -c "{{ PYTHON_BACKUP_CODE }}"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: volume-to-backup
+              mountPath: "{{ MOUNTED_PATH }}"
+              readOnly: true
+            - name: pg-run-tmp
+              mountPath: /var/run/postgresql # Requirement dir to write socket & pid of pg_dump
+          env:
+            - name: STORAGE_ADDRESS
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-address
+            - name: STORAGE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-username
+            - name: STORAGE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: storage-password
+            - name: CLUSTER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: clustersnap-config
+                  key: cluster-name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PGHOST
+              value: "/var/run/postgresql"
+      volumes:
+        - name: volume-to-backup
+          persistentVolumeClaim:
+            claimName: "{{ PVC_NAME }}"
+        - name: pg-run-tmp
+          emptyDir: {}
