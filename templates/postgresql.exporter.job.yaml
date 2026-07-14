@@ -9,15 +9,6 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - "{{ NODE_NAME }}"
       containers:
         # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
         - name: postgres-backup-worker
@@ -27,13 +18,13 @@ spec:
           args:
             - |
               # 1. Wait until the sidecar copies the native binaries and starts the database engine
-              until [ -f /mnt/bin/pg_dump ] && psql -h 127.0.0.1 -U postgres -lqt 2>/dev/null; do
+              until [ -f /clustersnap/pg_dump ] && psql -h 127.0.0.1 -U postgres -lqt 2>/dev/null; do
                 echo "Waiting for native binaries and local database engine to become ready..."
                 sleep 2
               done
               
               # 2. Prepend the shared binary directory to PATH so Python can discover them natively
-              export PATH="/mnt/bin:$PATH"
+              export PATH="/clustersnap:$PATH"
               
               # 3. Execute the dedicated worker process with clean structured imports
               python3 -m src.job_postgresql_worker --pvc "{{ PVC_NAME }}"
@@ -46,28 +37,16 @@ spec:
               memory: "512Mi"
           volumeMounts:
             - name: shared-binaries
-              mountPath: /mnt/bin
+              mountPath: /clustersnap
           env:
             - name: STORAGE_ADDRESS
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-address
+              value: "templated"
             - name: STORAGE_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-username
+              value: "templated"
             - name: STORAGE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-password
+              value: "templated"
             - name: CLUSTER_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: cluster-name
+              value: "templated"
             - name: NAMESPACE
               valueFrom:
                 fieldRef:
@@ -77,40 +56,72 @@ spec:
 
         # --- SIDE CAR CONTAINER: Target production database providing version-matched binaries ---
         - name: postgres-engine-provider
-          image: "{{ POSTGRES_IMAGE }}" # Dynamic image matching production layout (e.g. Bitnami, Official)
+          image: "{{ POSTGRES_IMAGE }}" # Get the real used image used
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # 1. Locate and copy the version-matched database binaries to the shared directory
-              PG_BIN_DIR=$(dirname $(which pg_dump))
-              cp $PG_BIN_DIR/pg_dump /mnt/bin/
-              cp $PG_BIN_DIR/pg_dumpall /mnt/bin/
-              cp $PG_BIN_DIR/psql /mnt/bin/
+              # 1. Dynamically locate PostgreSQL binaries using standard system environment pathing
+              PG_DUMP_BIN=$(which pg_dump)
+              PG_DUMPALL_BIN=$(which pg_dumpall)
+              PSQL_BIN=$(which psql)
+
+              # 2. Copy extracted native binaries directly to the shared isolated workspace
+              cp "$PG_DUMP_BIN" /clustersnap/pg_dump
+              cp "$PG_DUMPALL_BIN" /clustersnap/pg_dumpall
+              cp "$PSQL_BIN" /clustersnap/psql
+
+              # 3. Dynamic Shared Libraries Extraction (Pure POSIX + Multi-OS Support)
+              # Multi-libc fallback tracking for both Debian/Ubuntu (glibc) and Alpine (musl)
+              cp /usr/lib/libpq.so* /clustersnap/ 2>/dev/null || true
+              cp /lib/libpq.so* /clustersnap/ 2>/dev/null || true
               
-              # 2. Copy shared libraries if present (critical for hardened/minimal images compatibility)
-              cp /usr/lib/libpq.so* /mnt/bin/ 2>/dev/null || true
-              cp /opt/bitnami/postgresql/lib/libpq.so* /mnt/bin/ 2>/dev/null || true
-              
-              # 3. Initialize a temporary configuration with network trust mode over loopback
+              # Standard path scan based on the binary origin folder
+              PG_BIN_DIR=$(dirname "$PG_DUMP_BIN")
+              cp "$PG_BIN_DIR/../lib/libpq.so"* /clustersnap/ 2>/dev/null || true
+
+              # POSIX-compliant method to process ldd output if present
+              if which ldd >/dev/null 2>&1; then
+                for item in $(ldd "$PG_DUMP_BIN" 2>/dev/null); do
+                  case "$item" in
+                    /*)
+                      if [ -f "$item" ]; then
+                        cp "$item" /clustersnap/ 2>/dev/null || true
+                      fi
+                      ;;
+                  esac
+                done
+              fi
+
+              # 4. Define target data directory directly from the backup-map mounted path
+              TARGET_DIR="{{ MOUNTED_PATH }}"
+              if [ -f "{{ MOUNTED_PATH }}/data/postgresql.conf" ]; then
+                TARGET_DIR="{{ MOUNTED_PATH }}/data"
+              elif [ -f "{{ MOUNTED_PATH }}/postgresql/postgresql.conf" ]; then
+                TARGET_DIR="{{ MOUNTED_PATH }}/postgresql"
+              fi
+
+              # 5. Initialize a temporary configuration with network trust mode over loopback
               mkdir -p /tmp/pg_config
-              cp "{{ MOUNTED_PATH }}/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
+              cp "$TARGET_DIR/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
               echo "host all all 127.0.0.1/32 trust" > /tmp/pg_config/pg_hba_custom.conf
               cat /tmp/pg_config/pg_hba.conf >> /tmp/pg_config/pg_hba_custom.conf 2>/dev/null || true
-              
-              # 4. Start the database engine bound strictly to localhost (127.0.0.1)
-              exec docker-entrypoint.sh post²gres \
+
+              # 6. Start the database engine safely over localized sockets and trusted network loopback
+              exec postgres \
+                -D "$TARGET_DIR" \
                 -c hba_file=/tmp/pg_config/pg_hba_custom.conf \
                 -c listen_addresses='127.0.0.1' \
+                -c unix_socket_directories='/tmp' \
                 -c external_pid_file='/tmp/postmaster.pid'
           volumeMounts:
             - name: volume-to-backup
               mountPath: "{{ MOUNTED_PATH }}"
-              readOnly: true # Absolute read-only compliance for production snapshot preservation
+              readOnly: true
             - name: shared-binaries
-              mountPath: /mnt/bin
+              mountPath: /clustersnap
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:
             claimName: "{{ PVC_NAME }}"
         - name: shared-binaries
-          emptyDir: {} # Ephemeral scratchpad wiped immediately when the Job object is reaped
+          emptyDir: {} # Shared space where to find pg_dump

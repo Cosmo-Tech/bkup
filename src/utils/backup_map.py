@@ -69,7 +69,6 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         print(f"   workloads:")
         for wl in ns_data["workloads"]:
             print(f"    - resource: {wl['resource']}")
-            print(f"      replicas: {wl['replicas']}")
 
 
         # Collect PVC

@@ -37,25 +37,13 @@ spec:
               readOnly: true
           env:
             - name: STORAGE_ADDRESS
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-address
+              value: "templated"
             - name: STORAGE_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-username
+              value: "templated"
             - name: STORAGE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: storage-password
+              value: "templated"
             - name: CLUSTER_NAME
-              valueFrom:
-                secretKeyRef:
-                  name: clustersnap-config
-                  key: cluster-name
+              value: "templated"
             - name: NAMESPACE
               valueFrom:
                 fieldRef:

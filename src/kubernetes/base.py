@@ -1,6 +1,7 @@
 import os
 import yaml
 import time
+import hashlib
 from kubernetes import client, config
 
 
@@ -275,36 +276,96 @@ class KubernetesBase:
                 raise e
 
 
-    def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs) -> dict:
-        """Create a base job that should be overridden from child classes."""
-        pull_secrets = kwargs.get("image_pull_secrets", [])
-        if pull_secrets:
-            secrets_block = "imagePullSecrets:\n" + "\n".join([f"        - name: {s}" for s in pull_secrets])
-        else:
-            secrets_block = ""
+    def get_secret_payload(self, name: str, namespace: str) -> dict:
+        """Centralized and safe extraction of Secret base64 values decoded into a plain text map."""
+        import base64
+        try:
+            secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
+            if not secret.data:
+                return {}
+            return {k: base64.b64decode(v).decode('utf-8') for k, v in secret.data.items()}
+        except Exception:
+            return {}
 
-        return {
-            "JOB_NAME": self.get_job_name(pvc_name),
-            "NAMESPACE": self.namespace,
-            "NODE_NAME": node_name,
-            "MOUNTED_PATH": mounted_path,
-            "PVC_NAME": pvc_name,
-            "IMAGE_PULL_SECRETS_BLOCK": secrets_block
-        }
+
+    def get_job_name(self, pvc_name: str, suffix: str = "") -> str:
+        """Génère le nom unique du Job avec le préfixe d'origine sous la limite de 63 caractères."""
+        prefix = "clustersnap-backup-"
+        suffix_str = f"-{suffix}" if suffix else ""
+        candidate_name = f"{prefix}{pvc_name}{suffix_str}"
+        
+        if len(candidate_name) <= 63:
+            return candidate_name
+            
+        # Si ça déborde (ex: AKS), calcul de la taille disponible pour la sous-chaîne PVC
+        # prefix (19 chars) + suffix_str (8-9 chars) + hash d'unicité (8 chars) + séparateurs (2 chars)
+        pvc_hash = hashlib.md5(pvc_name.encode('utf-8')).hexdigest()[:8]
+        allowed_pvc_len = 63 - (len(prefix) + len(pvc_hash) + 1 + len(suffix_str))
+        
+        # Troncature propre de la chaîne du PVC
+        truncated_pvc = pvc_name[:allowed_pvc_len]
+        return f"{prefix}{truncated_pvc}-{pvc_hash}{suffix_str}"
+
+
+    def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs) -> dict:
+        """Create a base job layout configuration block."""
+        return {}
+
 
 
     def _launch_generic_job(self, template_path: str, replacements: dict):
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Template path '{template_path}' not found.")
 
+        # Résolution dynamique et centralisée des secrets depuis l'environnement du master pod (default ou in-cluster)
+        master_ns = self.get_current_namespace_from_pod() or "default"
+        secret_data = self.get_secret_payload("clustersnap-config", master_ns)
+
         with open(template_path, "r") as f:
             template_content = f.read()
 
         rendered = template_content
-        for key, value in replacements.items():
-            rendered = rendered.replace(f"{{{{ {key} }}}}", str(value))
+        rendered = rendered.replace("{{ JOB_NAME }}", replacements["JOB_NAME"])
+        rendered = rendered.replace("{{ NAMESPACE }}", replacements["NAMESPACE"])
+        rendered = rendered.replace("{{ PVC_NAME }}", replacements["PVC_NAME"])
+        rendered = rendered.replace("{{ MOUNTED_PATH }}", replacements["MOUNTED_PATH"])
+        rendered = rendered.replace("{{ POSTGRES_IMAGE }}", replacements["POSTGRES_IMAGE"])
 
         job_manifest = yaml.safe_load(rendered)
+        pod_spec = job_manifest["spec"]["template"]["spec"]
+
+        if replacements.get("AFFINITY_DICT"):
+            pod_spec["affinity"] = replacements["AFFINITY_DICT"]
+        else:
+            pod_spec.pop("affinity", None)
+
+        if replacements.get("IMAGE_PULL_SECRETS_LIST"):
+            pod_spec["imagePullSecrets"] = [{"name": s} for s in replacements["IMAGE_PULL_SECRETS_LIST"]]
+
+        pod_spec["tolerations"] = [
+            {"operator": "Exists", "effect": "NoSchedule"},
+            {"operator": "Exists", "effect": "NoExecute"}
+        ]
+
+        # Injection dynamique inter-namespace des secrets au niveau de l'arborescence des conteneurs
+        for container in pod_spec["containers"]:
+            if "env" in container:
+                # Filtrage et remplacement des valueFrom par des valeurs directes
+                new_env = []
+                for env_item in container["env"]:
+                    name = env_item["name"]
+                    if name == "STORAGE_ADDRESS":
+                        new_env.append({"name": name, "value": secret_data.get("storage-address", "changeme")})
+                    elif name == "STORAGE_USERNAME":
+                        new_env.append({"name": name, "value": secret_data.get("storage-username", "changeme")})
+                    elif name == "STORAGE_PASSWORD":
+                        new_env.append({"name": name, "value": secret_data.get("storage-password", "changeme")})
+                    elif name == "CLUSTER_NAME":
+                        new_env.append({"name": name, "value": secret_data.get("cluster-name", "changeme")})
+                    else:
+                        new_env.append(env_item)
+                container["env"] = new_env
+
         job_name = job_manifest["metadata"]["name"]
 
         try:
@@ -314,13 +375,9 @@ class KubernetesBase:
             print(f"  error: failed to submit job manifest '{job_name}': {e}")
             raise e
 
-            
-    def get_job_name(self, pvc_name: str) -> str:
-        return f"clustersnap-backup-{pvc_name}"
 
-
-    def delete_backup_job(self, pvc_name: str):
-        job_name = self.get_job_name(pvc_name)
+    def delete_backup_job(self, pvc_name: str, suffix: str = ""):
+        job_name = self.get_job_name(pvc_name, suffix=suffix)
         try:
             self.batch_v1.delete_namespaced_job(
                 name=job_name,
@@ -341,7 +398,6 @@ class KubernetesBase:
         while time.time() - start_time < timeout:
             current_replicas = self.get_replicas(resource_type, resource_name)
             
-            # Si le control plane valide que les réplicas actifs sont à 0 (ou None/0 si déjà éteint)
             if current_replicas == 0 or current_replicas is None:
                 print(f"  info: {resource_type}/{resource_name} successfully stopped.")
                 return True
@@ -352,30 +408,56 @@ class KubernetesBase:
         return False
 
 
-    def wait_for_volume_detachment(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
-        """Block execution until the volume is completely detached from any cluster node."""
-        print(f"  info: ensuring PVC '{pvc_name}' volume attachment is fully released...")
+    def is_topology_constrained(self, pvc_name: str) -> bool:
+        """Analyse le driver de stockage du PV pour détecter la présence de stockage Cloud localisé."""
         try:
             pvc = self.core_v1.read_namespaced_persistent_volume_claim(name=pvc_name, namespace=self.namespace)
             pv_name = pvc.spec.volume_name
-            if not pv_name:
+            if pv_name:
+                pv = self.core_v1.read_persistent_volume(name=pv_name)
+                csi_driver = pv.spec.csi.driver.lower() if pv.spec.csi else ""
+                if any(cloud in csi_driver for cloud in ["azure", "aws", "ebs", "gce", "gcp"]) or pv.spec.nfs or "file" in csi_driver:
+                    return False
                 return True
-                
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                detached = True
-                attachments = self.storage_v1.list_volume_attachment()
-                for attach in attachments.items:
-                    if attach.spec.source.persistent_volume_name == pv_name:
-                        # If a volume attachment object exists and is not metadata-only, it's still attached
-                        detached = False
-                        break
-                if detached:
-                    print(f"  info: PVC '{pvc_name}' volume is safely detached.")
-                    return True
-                time.sleep(check_interval)
         except Exception as e:
-            print(f"  warn: failed checking attachment status for '{pvc_name}': {e}")
+            print(f"     warn: storage topology assessment bypassed ({e}). Defaulting to constrained.")
+        return True
+
+
+    def wait_for_volume_detachment(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
+        """Bloque l'exécution tant qu'un pod applicatif utilise activement ce PVC dans le namespace."""
+        print(f"   info: ensuring no active pods are locking PVC '{pvc_name}' in namespace '{self.namespace}'...")
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+                pvc_is_locked = False
+                pods_locking_pvc = []
+
+                for pod in pods.items:
+                    if pod.metadata.name.startswith("clustersnap-backup-"):
+                        continue
+                        
+                    if pod.spec.volumes:
+                        for vol in pod.spec.volumes:
+                            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                                if pod.status.phase in ["Running", "Pending"] or pod.metadata.deletion_timestamp is not None:
+                                    pvc_is_locked = True
+                                    pods_locking_pvc.append(pod.metadata.name)
+                                    break
+
+                if not pvc_is_locked:
+                    print(f"     Volume for PVC '{pvc_name}' is totally free from production pods workload!")
+                    time.sleep(5)
+                    return True
+                    
+                print(f"     pvc '{pvc_name}' is still locked by pod(s): {', '.join(pods_locking_pvc)}. Waiting...")
+            except Exception as e:
+                print(f"     warn: error tracking pods storage locks ({e}), retrying...")
+            time.sleep(check_interval)
+
+        print(f"   warn: timeout reached while waiting for PVC '{pvc_name}' to be released. Proceeding anyway...")
         return False
 
 
@@ -409,13 +491,15 @@ class KubernetesBase:
             pending_deletion = False
             for pvc in pvc_list:
                 pvc_name = pvc if isinstance(pvc, str) else pvc.get("name")
-                job_name = self.get_job_name(pvc_name)
-                try:
-                    self.batch_v1.read_namespaced_job(name=job_name, namespace=self.namespace)
-                    pending_deletion = True  # Job still exists
-                except client.exceptions.ApiException as e:
-                    if e.status != 404:
+                # On doit nettoyer à la fois les résidus de jobs -volume et -pgdump
+                for suff in ["volume", "pgdump"]:
+                    job_name = self.get_job_name(pvc_name, suffix=suff)
+                    try:
+                        self.batch_v1.read_namespaced_job(name=job_name, namespace=self.namespace)
                         pending_deletion = True
+                    except client.exceptions.ApiException as e:
+                        if e.status != 404:
+                            pending_deletion = True
             if not pending_deletion:
                 return True
             time.sleep(check_interval)
