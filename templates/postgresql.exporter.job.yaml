@@ -17,17 +17,19 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # 1. Wait until the sidecar copies the native binaries and starts the database engine
-              until [ -f /clustersnap/pg_dump ] && psql -h 127.0.0.1 -U postgres -lqt 2>/dev/null; do
-                echo "Waiting for native binaries and local database engine to become ready..."
-                sleep 2
+              # This script waits for a UNIX pipe from the sidecar container to get the right PostgreSQL binaries
+              pipe='/shared/pg_pipe'
+              ready_flag='/shared/sidecar_ready'
+
+              echo "waiting for sidecar UNIX pipe at $pipe..."
+              until [ -f "$ready_flag" ] && [ -p "$pipe" ]; do
+                sleep 1
               done
-              
-              # 2. Prepend the shared binary directory to PATH so Python can discover them natively
-              export PATH="/clustersnap:$PATH"
-              
-              # 3. Execute the dedicated worker process with clean structured imports
-              python3 -m src.job_postgresql_worker --pvc "{{ PVC_NAME }}"
+
+              echo "Getting backup from sidecar..."
+
+              # Use the pipe as path arg for the exporter 
+              python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe"
           resources:
             requests:
               cpu: "250m"
@@ -36,8 +38,8 @@ spec:
               cpu: "1000m"
               memory: "512Mi"
           volumeMounts:
-            - name: shared-binaries
-              mountPath: /clustersnap
+            - name: shared
+              mountPath: /shared
           env:
             - name: STORAGE_ADDRESS
               value: "templated"
@@ -53,6 +55,10 @@ spec:
                   fieldPath: metadata.namespace
             - name: PGHOST
               value: "127.0.0.1"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "postgres"
 
         # --- SIDE CAR CONTAINER: Target production database providing version-matched binaries ---
         - name: postgres-engine-provider
@@ -60,68 +66,52 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # 1. Dynamically locate PostgreSQL binaries using standard system environment pathing
-              PG_DUMP_BIN=$(which pg_dump)
-              PG_DUMPALL_BIN=$(which pg_dumpall)
-              PSQL_BIN=$(which psql)
+              # This script create a UNIX pipe to share the PostgreSQL binaries
+              pipe='/shared/pg_pipe'
+              ready_flag='/shared/sidecar_ready'
 
-              # 2. Copy extracted native binaries directly to the shared isolated workspace
-              cp "$PG_DUMP_BIN" /clustersnap/pg_dump
-              cp "$PG_DUMPALL_BIN" /clustersnap/pg_dumpall
-              cp "$PSQL_BIN" /clustersnap/psql
-
-              # 3. Dynamic Shared Libraries Extraction (Pure POSIX + Multi-OS Support)
-              # Multi-libc fallback tracking for both Debian/Ubuntu (glibc) and Alpine (musl)
-              cp /usr/lib/libpq.so* /clustersnap/ 2>/dev/null || true
-              cp /lib/libpq.so* /clustersnap/ 2>/dev/null || true
+              rm -f "$pipe" "$ready_flag"
+              mkfifo "$pipe"
               
-              # Standard path scan based on the binary origin folder
-              PG_BIN_DIR=$(dirname "$PG_DUMP_BIN")
-              cp "$PG_BIN_DIR/../lib/libpq.so"* /clustersnap/ 2>/dev/null || true
-
-              # POSIX-compliant method to process ldd output if present
-              if which ldd >/dev/null 2>&1; then
-                for item in $(ldd "$PG_DUMP_BIN" 2>/dev/null); do
-                  case "$item" in
-                    /*)
-                      if [ -f "$item" ]; then
-                        cp "$item" /clustersnap/ 2>/dev/null || true
-                      fi
-                      ;;
-                  esac
-                done
+              if [ -p "$pipe" ]; then
+                echo "sucessfully created UNIX pipe at $pipe"
+              else
+                echo 'error: UNIX pipe not created, cannot get pg binaries'
+                exit 1
               fi
-
-              # 4. Define target data directory directly from the backup-map mounted path
-              TARGET_DIR="{{ MOUNTED_PATH }}"
-              if [ -f "{{ MOUNTED_PATH }}/data/postgresql.conf" ]; then
-                TARGET_DIR="{{ MOUNTED_PATH }}/data"
-              elif [ -f "{{ MOUNTED_PATH }}/postgresql/postgresql.conf" ]; then
-                TARGET_DIR="{{ MOUNTED_PATH }}/postgresql"
+              
+              # Simple flag to be sure the sidecar is running before the main container
+              echo '' > "$ready_flag"
+              if [ -f "$ready_flag" ]; then
+                echo "successfully created sidecar ready-flag"
+              else
+                echo 'error: sidecar ready-flag not created, cannot continue'
+                exit 1
               fi
+ 
+              echo "Sidecar bootstrap finished, flag created."
 
-              # 5. Initialize a temporary configuration with network trust mode over loopback
-              mkdir -p /tmp/pg_config
-              cp "$TARGET_DIR/pg_hba.conf" /tmp/pg_config/pg_hba.conf 2>/dev/null || true
-              echo "host all all 127.0.0.1/32 trust" > /tmp/pg_config/pg_hba_custom.conf
-              cat /tmp/pg_config/pg_hba.conf >> /tmp/pg_config/pg_hba_custom.conf 2>/dev/null || true
+              # Simple data dump to the pipe
+              echo "starting database dump to UNIX pipe..."
+              pg_dump > "$pipe"
 
-              # 6. Start the database engine safely over localized sockets and trusted network loopback
-              exec postgres \
-                -D "$TARGET_DIR" \
-                -c hba_file=/tmp/pg_config/pg_hba_custom.conf \
-                -c listen_addresses='127.0.0.1' \
-                -c unix_socket_directories='/tmp' \
-                -c external_pid_file='/tmp/postmaster.pid'
+              rm -f "$ready_flag"
           volumeMounts:
             - name: volume-to-backup
               mountPath: "{{ MOUNTED_PATH }}"
               readOnly: true
-            - name: shared-binaries
-              mountPath: /clustersnap
+            - name: shared
+              mountPath: /shared
+          env:
+            - name: PGHOST
+              value: "127.0.0.1"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "postgres"
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:
             claimName: "{{ PVC_NAME }}"
-        - name: shared-binaries
+        - name: shared
           emptyDir: {} # Shared space where to find pg_dump

@@ -83,7 +83,7 @@ def get_superuser_name():
 
 def get_all_databases(superuser):
     """Retrieve the list of active databases using the discovered superuser"""
-    command = f"psql -h 127.0.0.1 -U {superuser} -t -A -c \"SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres', 'images', 'azure_sys')\""
+    command = f"psql -h 127.0.0.1 -U {superuser} -t -A -c \"SELECT datname FROM pg_database WHERE datistemplate = false\""
 
     process = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()

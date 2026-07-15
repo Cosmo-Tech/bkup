@@ -1,0 +1,172 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ NAMESPACE }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
+        - name: postgres-backup-worker
+          image: ghcr.io/cosmo-tech/clustersnap:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 1. Wait until binaries are copied AND the network engine responds over TCP loopback
+              # pg_isready est l'outil parfait : il teste la dispo réseau sans exiger d'auth valide
+              until [ -f /clustersnap/pg_dump ] && /clustersnap/pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; do
+                echo "Waiting for native binaries and local database engine to become ready..."
+                sleep 2
+              done
+
+              echo "Database engine detected online! Launching extraction worker process..."
+
+              # 2. Prepend the shared binary directory to PATH so Python can discover them natively
+              export PATH="/clustersnap:$PATH"
+
+              # 3. Execute the dedicated worker process with clean structured imports
+              # On s'assure que le script Python attaque bien le serveur local sur 127.0.0.1 via TCP
+              python3 -m src.job_postgresql_worker --pvc "{{ PVC_NAME }}"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: shared-binaries
+              mountPath: /clustersnap
+          env:
+            - name: STORAGE_ADDRESS
+              value: "templated"
+            - name: STORAGE_USERNAME
+              value: "templated"
+            - name: STORAGE_PASSWORD
+              value: "templated"
+            - name: CLUSTER_NAME
+              value: "templated"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PGHOST
+              value: "127.0.0.1"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "postgres"
+
+        # --- SIDE CAR CONTAINER: Target production database providing version-matched binaries ---
+        - name: postgres-engine-provider
+          image: "{{ POSTGRES_IMAGE }}" # Get the real used image used
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # 1. Dynamically locate PostgreSQL binaries using standard system environment pathing
+              PG_DUMP_BIN=$(which pg_dump)
+              PG_DUMPALL_BIN=$(which pg_dumpall)
+              PSQL_BIN=$(which psql)
+              PG_ISREADY_BIN=$(which pg_isready)
+
+              # 2. Copy extracted native binaries directly to the shared isolated workspace
+              cp "$PG_DUMP_BIN" /clustersnap/pg_dump
+              cp "$PG_DUMPALL_BIN" /clustersnap/pg_dumpall
+              cp "$PSQL_BIN" /clustersnap/psql
+              cp "$PG_ISREADY_BIN" /clustersnap/pg_isready
+
+              # 3. Dynamic Shared Libraries Extraction (Pure POSIX)
+              cp /usr/lib/libpq.so* /clustersnap/ 2>/dev/null || true
+              cp /lib/libpq.so* /clustersnap/ 2>/dev/null || true
+              PG_BIN_DIR=$(dirname "$PG_DUMP_BIN")
+              cp "$PG_BIN_DIR/../lib/libpq.so"* /clustersnap/ 2>/dev/null || true
+
+              if which ldd >/dev/null 2>&1; then
+                for item in $(ldd "$PG_DUMP_BIN" 2>/dev/null); do
+                  case "$item" in
+                    /*)
+                      if [ -f "$item" ]; then
+                        cp "$item" /clustersnap/ 2>/dev/null || true
+                      fi
+                      ;;
+                  esac
+                done
+              fi
+
+              # 4. --- VIRTUAL SHADOW WORKSPACE CREATION ---
+              SRC_DIR="/pvc-backstore"
+              if [ -d "/pvc-backstore/data" ]; then
+                SRC_DIR="/pvc-backstore/data"
+              elif [ -d "/pvc-backstore/postgresql/data" ]; then
+                SRC_DIR="/pvc-backstore/postgresql/data"
+              fi
+
+              RUNTIME_DIR="{{ MOUNTED_PATH }}/shadow_runtime"
+              mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+              chmod 700 "$RUNTIME_DIR"
+              echo "Building transaction-safe shadow layer layout inside: $RUNTIME_DIR"
+              
+              # ÉTAPE A : On applique d'abord un lien symbolique global de TOUT le contenu du PVC
+              for file in "$SRC_DIR"/* "$SRC_DIR"/.*; do
+                base_item=$(basename "$file")
+                if [ "$base_item" != "." ] && [ "$base_item" != ".." ] && [ "$base_item" != "*" ]; then
+                  ln -s "$file" "$RUNTIME_DIR/$base_item" 2>/dev/null || true
+                fi
+              done
+
+              # ÉTAPE B : On dégage proprement les liens symboliques des répertoires d'écritures critiques
+              rm -rf "$RUNTIME_DIR/global" "$RUNTIME_DIR/pg_wal" "$RUNTIME_DIR/postmaster.pid" "$RUNTIME_DIR/postmaster.opts" 2>/dev/null || true
+              rm -f "$RUNTIME_DIR/pg_hba.conf" "$RUNTIME_DIR/postgresql.conf" 2>/dev/null || true
+
+              # ÉTAPE C : On remplace par des copies physiques locales modifiables pour le Crash Recovery
+              for dir in global pg_wal; do
+                if [ -d "$SRC_DIR/$dir" ]; then
+                  mkdir -p "$RUNTIME_DIR/$dir"
+                  cp -Rp "$SRC_DIR/$dir"/* "$RUNTIME_DIR/$dir/" 2>/dev/null || true
+                fi
+              done
+
+              # On duplique aussi les métadonnées de configuration racine pour qu'elles restent édictables
+              for file in PG_VERSION postgresql.conf postgresql.auto.conf pg_ident.conf; do
+                if [ -f "$SRC_DIR/$file" ]; then
+                  rm -f "$RUNTIME_DIR/$file" 2>/dev/null || true
+                  cp -p "$SRC_DIR/$file" "$RUNTIME_DIR/$file" 2>/dev/null || true
+                fi
+              done
+
+              # 5. --- AGNOSTIC CONFIGURATION LAYERING ---
+              echo "host all all 127.0.0.1/32 trust" > "$RUNTIME_DIR/pg_hba.conf"
+              echo "local all all trust" >> "$RUNTIME_DIR/pg_hba.conf"
+
+              if [ ! -f "$RUNTIME_DIR/postgresql.conf" ]; then
+                echo "max_connections = 100" > "$RUNTIME_DIR/postgresql.conf"
+                echo "shared_buffers = 128MB" >> "$RUNTIME_DIR/postgresql.conf"
+              fi
+
+              # 6. --- EXECUTE FROM THE CONTROLLED USER INTERFACE ---
+              echo "Launching database engine via agnostic shadow storage layer..."
+              exec postgres \
+                -D "$RUNTIME_DIR" \
+                -c listen_addresses='127.0.0.1' \
+                -c unix_socket_directories='/tmp'
+          volumeMounts:
+            - name: volume-to-backup
+              mountPath: /pvc-backstore
+              readOnly: true
+            - name: shared-binaries
+              mountPath: /clustersnap
+            - name: scratchpad-layer
+              mountPath: "{{ MOUNTED_PATH }}"
+      volumes:
+        - name: volume-to-backup
+          persistentVolumeClaim:
+            claimName: "{{ PVC_NAME }}"
+        - name: shared-binaries
+          emptyDir: {}
+        - name: scratchpad-layer
+          emptyDir: {} # Shared space where to find pg_dump
