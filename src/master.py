@@ -293,12 +293,23 @@ def main():
     # SIGTERM = Kubernetes Pod killed
     signal.signal(signal.SIGTERM, restore_production_on_signal)
 
-    parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
-    parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
-    parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace (comma-separated or 'all')")
-    parser.add_argument("-j", "--job", action="store_true", help="Run a backup job")
-    parser.add_argument("-gm", "--get-map", action="store_true", help="Display backup-map")
-    parser.add_argument("-rm", "--refresh-map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
+    parser = argparse.ArgumentParser(
+        description="Backup Kubernetes volumes",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80)
+    )
+
+    # Groupe d'options globales
+    global_group = parser.add_argument_group("global")
+    global_group.add_argument("-c", "--context", type=str, metavar="CT", default=None, help="Local kubectl context")
+    global_group.add_argument("-n", "--namespace", type=str, metavar="NS", default=None, help="Kubernetes namespace(s) (comma-separated)")
+    global_group.add_argument("-j", "--job", action="store_true", help="Run backup job(s) based on current backup-map")
+    global_group.add_argument("-bm", "--backup-map", action="store_true", help="Generate backup-map configuration")
+
+    # Groupe d'options spécifiques à -bm (--backup-map)
+    map_group = parser.add_argument_group("backup-map")
+    map_group.add_argument("-s", "--scope", type=str, choices=["namespaced", "wide"], metavar="SCOPE", default=None, help="Backup-map scope: 'namespaced' or 'wide'")
+    map_group.add_argument("-a", "--apply", action="store_true", help="Apply the generated backup-map")
+
     args = parser.parse_args()
 
     cluster_name_env = os.getenv("CLUSTER_NAME")
@@ -307,38 +318,60 @@ def main():
     cluster_context = cluster_name_env if cluster_name_env else args.context
     namespace_input = namespace_env if namespace_env else args.namespace
 
-    kube = VolumeBackupJob(context=cluster_context, namespace=namespace_input if namespace_input and namespace_input.lower() != "all" else "default")
+    kube = VolumeBackupJob(context=cluster_context, namespace="default")
     kube_client_sigkill = kube
 
-    # Targetted namespace
-    if namespace_input and namespace_input.lower() != "all":
-        target_namespaces = [ns.strip() for ns in namespace_input.split(",")]
-
-    # Cluster-wide
-    else:
-        target_namespaces = kube.list_namespaces()
-
+    if (args.scope or args.apply) and not args.backup_map:
+        print("error: --scope (-s) and --apply (-a) can only be used with --backup-map (-bm).")
+        sys.exit(1)
 
     if args.job:
-        bpm.get_backup_map(kube)
+        # Résolution sécurisée de la backup-map
+        master_ns = namespace_input if namespace_input else get_master_namespace(kube)
+        kube.namespace = master_ns
+        try:
+            bpm.get_backup_map(kube)
+        except Exception as e:
+            print(f"error: could not retrieve 'clustersnap-backup-map' ConfigMap in namespace '{master_ns}': {e}")
+            sys.exit(1)
+        if namespace_input and namespace_input.lower() != "all":
+            target_namespaces = [ns.strip() for ns in namespace_input.split(",")]
+        else:
+            target_namespaces = kube.list_namespaces()
+
         for ns in target_namespaces:
             kube.namespace = ns
             run_backup_job(cluster_context, namespace=ns)
 
-    elif args.refresh_map:
-        backup_map = bpm.backup_map_scanner(kube, target_namespaces)
-        kube.save_to_configmap(
-            name="clustersnap-backup-map",
-            namespace=get_master_namespace(kube),
-            data=backup_map
-        )
+    elif args.backup_map:
+        # Génération de la backup-map
+        if not args.scope:
+            print("error: --scope (-s) is required when using --backup-map (-bm). Choices: 'namespaced' or 'wide'.")
+            sys.exit(1)
 
-    elif args.get_map:
-        backup_map = bpm.get_backup_map(kube)
-        print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))
+        if args.scope == "wide":
+            target_namespaces = kube.list_namespaces()
+        elif args.scope == "namespaced":
+            if not namespace_input:
+                print("error: --namespace (-n) is required when --scope is 'namespaced'.")
+                sys.exit(1)
+            target_namespaces = [ns.strip() for ns in namespace_input.split(",")]
+
+        backup_map = bpm.backup_map_scanner(kube, target_namespaces)
+
+        if args.apply:
+            master_ns = namespace_input if namespace_input else get_master_namespace(kube)
+            kube.save_to_configmap(
+                name="clustersnap-backup-map",
+                namespace=master_ns,
+                data=backup_map
+            )
+            print(f"info: backup-map successfully applied and saved to ConfigMap in namespace '{master_ns}'.")
+        else:
+            print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))
 
     else:
-        print('error: please --help for more info')
+        print('error: please use --help for usage instructions')
 
 
 if __name__ == "__main__":
