@@ -5,16 +5,17 @@ from kubernetes.client.rest import ApiException
 import src.utils.psql as psql
 
 
-def get_backup_map(kube) -> dict:
+def get_backup_map(kube, master_ns: str = None) -> dict:
     """Get existing ConfigMap of the backup-map."""
+    target_ns = master_ns if master_ns else kube.get_namespace()
     saved_map = kube.get_configmap(
         name="clustersnap-backup-map",
-        namespace=kube.get_namespace()
+        namespace=target_ns
     )
-    
+
     if not saved_map:
         return {"cluster": kube.get_cluster_name(), "namespaces": []}
-        
+
     return saved_map
 
 

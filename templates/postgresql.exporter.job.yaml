@@ -32,12 +32,10 @@ spec:
                 echo "waited $timer"
               done
 
-              echo "Getting backup from sidecar..."
+              echo "Getting backup from database-dumper..."
 
               # Use the pipe as path arg for the exporter 
               python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe" --type pg_dump
-
-              sleep 11111111111111
           resources:
             requests:
               cpu: "250m"
@@ -68,7 +66,6 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              set -x
               # This script create a UNIX pipe to talk with the worker
 
               pipe='/shared/pg_pipe'
@@ -77,12 +74,9 @@ spec:
               rm -f "$pipe" "$current_db"
 
 
-
               # -------------------------------------------
               #  UNIX PIPE TO SEND DATA TO THE WORKER
               # -------------------------------------------
-
-              # Create UNIX pipe to talk with the worker
               mkfifo "$pipe"
               if [ -p "$pipe" ]; then
                 echo "successfully created UNIX pipe at $pipe"
@@ -92,13 +86,9 @@ spec:
               fi
 
 
-
               # -------------------------------------------
               #  DATA DUMP
               # -------------------------------------------
-
-
-              # Strict environment variables enforcement (NO FALLBACKS)
               if [ -z "$PGHOST" ]; then
                 echo "error: PGHOST environment variable is missing."
                 exit 1
@@ -125,13 +115,13 @@ spec:
 
               # If PGPASSWORD points to a mounted secret file, read file content
               if [ -f "$PGPASSWORD" ]; then
-                export PGPASSWORD=$(cat "$PGPASSWORD")
+                PGPASSWORD=$(cat "$PGPASSWORD")
               fi
 
               echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
               until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" >/dev/null 2>&1; do
-                sleep 2
                 echo "Waiting for database connection..."
+                sleep 2
               done
               
 
@@ -168,9 +158,6 @@ spec:
 
               # "done" is the signal for that Python is waiting in the worker
               echo "done" > "$current_db"
-
-
-              sleep 11111111111111
           volumeMounts:
             - name: shared
               mountPath: /shared

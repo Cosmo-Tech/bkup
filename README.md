@@ -151,17 +151,28 @@ clustersnap-backup-map.yaml: |
 
 
 #### Tweaks
-Everything in the backup-map can be tweaked, but here is a short description of the most useful keys
+Everything in the backup-map can be tweaked Here is the list of configurable keys:
 
-| key                       | value         | info
-|---------------------------|---------------|------
-| workloads[]               | *[]*          | Nothing to backup
-| claim[]                   | *[]*          | Nothing to backup
-| workloads[].replicas      | *integer*     | Clustersnap must scale replicas=0 to perform the backups. This value is used to restore the right replicas quantity
-| claims[].attachment-node  | *node-name*   | Useful when data are stored on specifics nodes (and not on a remote storage), jobs must run on same nodes as PVC
-| claims[].mounts[].path    | *path*        | Mount point where to look for data to backup
-| claims[].backup-type      | **volume**    | The backup job will create a `.tar.gz containing data of the mounted paths` found in the PVC
-| claims[].backup-type      | **pg_dump**   | The backup job will use `pg_dump to create a .sql` dump of all the databases found in the PVC
+| key                                       | value           | info
+|-------------------------------------------|-----------------|------
+| **`claims[]`**                            | *list*          | List of PersistentVolumeClaims (PVCs) to orchestrate within the namespace. If empty = nothing to backup.
+| **`claims[].attachment-node`**            | *string*        | Name of the Kubernetes node where the PVC is attached. Useful if storage is node-constrained.
+| **`claims[].mounts[].path`**              | *string*        | Container mount path where data to back up is located.
+| **`claims[].backup-type`**                | **`volume`**    | The backup job will create a `.tar.gz containing data of the mounted paths` found in the PVC
+| **`claims[].backup-type`**                | **`pg_dump`**   | The backup job will use `pg_dump to create a .sql` dump of all the databases found in the PVC
+| **`claims[].postgresql`**                 | *dictionary*    | Configuration block for PostgreSQL database access.
+| **`claims[].postgresql.host`**            | *string*        | Hardcoded PostgreSQL host/IP *(Overrides `host-env`)*. *Default: Dynamic Pod IP.*
+| **`claims[].postgresql.host-env`**        | *string*        | Name of the workload environment variable containing the host from original database pod.
+| **`claims[].postgresql.port`**            | *integer*       | Hardcoded connection port *(Overrides `port-env`)*. *Default: 5432.*
+| **`claims[].postgresql.port-env`**        | *string*        | Name of the workload environment variable containing the port from original database pod.
+| **`claims[].postgresql.user`**            | *string*        | Hardcoded PostgreSQL username *(Overrides `user-env`)*.
+| **`claims[].postgresql.user-env`**        | *string*        | Name of the workload environment variable containing the user from original database pod.
+| **`claims[].postgresql.password-env`**    | *string*        | **[REQUIRED]** Name of the workload environment variable containing the password (or mounted secret file).
+| **`claims[].postgresql.db`**              | *string*        | Hardcoded target database name *(Overrides `db-env`)*.
+| **`claims[].postgresql.db-env`**          | *string*        | Name of the workload environment variable containing the database name.
+
+> [!CAUTION]
+> **Security Warning:** The plain-text `password` key is **strictly forbidden** inside the `backup-map` to prevent plain-text credential leaks in a ConfigMap. You **must** use `password-env` to reference your workload's environment variable.
 
 
 ### Workflows

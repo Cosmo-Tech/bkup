@@ -91,6 +91,26 @@ class KubernetesBase:
         return targets
 
 
+    def get_pod_ip(self, pvc_name: str) -> str:
+        """Find the exact IP of the running Pod mounted on the target PVC."""
+        try:
+            pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+            for pod in pods.items:
+                if pod.status.phase != "Running":
+                    continue
+
+                if pod.spec.volumes:
+                    for vol in pod.spec.volumes:
+                        if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                            if pod.status.pod_ip:
+                                print(f"  info: detected active Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}")
+                                return pod.status.pod_ip
+        except Exception as e:
+            print(f"  warn: failed to resolve active pod IP for PVC '{pvc_name}': {e}")
+
+        raise RuntimeError(f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}'")
+
+
     def get_image_pull_secrets(self, resource_type: str, resource_name: str) -> list:
         """Dynamically extract imagePullSecrets names defined on a specific workload resource."""
         try:
@@ -368,9 +388,9 @@ class KubernetesBase:
             clean_env = []
             final_overrides = {}
 
-            # If container is database-dumper and Python prepared a dumper_env_list
-            if c_name == "database-dumper" and replacements.get("DUMPER_ENV_LIST"):
-                raw_env = replacements["DUMPER_ENV_LIST"]
+            # Read dumper_env_list correctly from replacements dictionary
+            if c_name == "database-dumper" and replacements.get("dumper_env_list"):
+                raw_env = replacements["dumper_env_list"]
             else:
                 raw_env = container.get("env") or []
 
