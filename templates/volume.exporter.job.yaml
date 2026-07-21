@@ -8,6 +8,7 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
+      serviceAccountName: clustersnap
       restartPolicy: Never
       affinity:
         nodeAffinity:
@@ -23,7 +24,7 @@ spec:
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.exporter"]
-          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}"]
+          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
           resources:
             requests:
               cpu: "250m"

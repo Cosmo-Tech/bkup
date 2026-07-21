@@ -12,6 +12,7 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
+      serviceAccountName: clustersnap
       restartPolicy: Never    
       containers:
         # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
@@ -35,7 +36,7 @@ spec:
               echo "Getting backup from sidecar..."
 
               # Use the pipe as path arg for the exporter 
-              python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe"
+              python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe" --type pg_dump
 
               sleep 11111111111111
           resources:
@@ -101,14 +102,15 @@ spec:
               TARGET_HOST="${PGHOST:-$POSTGRES_HOST}"
               TARGET_PORT="${PGPORT:-5432}"
 
-              echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT..."
-              until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" >/dev/null 2>&1; do
+              # Password resolution from original environment variables (Bitnami, Official, Custom)
+              export PGPASSWORD="${PGPASSWORD:-${POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$BITNAMI_POSTGRESQL_PASSWORD}}}"
+              TARGET_USER="${PGUSER:-${POSTGRES_USER:-${POSTGRESQL_USERNAME:-postgres}}}"
+
+              echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
+              until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" >/dev/null 2>&1; do
                 sleep 2
                 echo "Waiting for database connection..."
               done
-
-              # Discover user if PGUSER is not preset
-              TARGET_USER="${PGUSER:-postgres}"
               
 
               # List all databases

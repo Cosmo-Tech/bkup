@@ -5,14 +5,13 @@ import time
 
 from src.storage.azure import AzureStorage
 from src.utils.stream import is_unix_pipe, GzipStreamer, TarGenerator
-from src.kubernetes.base import KubernetesBase
-from src.utils.backup_map import resolve_backup_type_from_map
 
 
 def main():
     parser = argparse.ArgumentParser(description="Clustersnap Backup Worker")
     parser.add_argument("--path", type=str, required=True, help="Path to backup (directory or UNIX pipe)")
     parser.add_argument("--pvc", type=str, required=True, help="Name of the PVC")
+    parser.add_argument("--type", type=str, default=None, choices=["volume", "pg_dump"], help="Type of backup")
     args = parser.parse_args()
 
     # Env var from YAML template
@@ -32,12 +31,7 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
-
-    # ------------------------------
-    # BACKUP STRATEGY AUTO-RESOLUTION
-    # ------------------------------
-    kube = KubernetesBase(namespace=namespace)
-    backup_type = resolve_backup_type_from_map(kube, args.pvc, namespace)
+    backup_type = args.type if args.type else ("pg_dump" if is_unix_pipe(args.path) else "volume")
 
     # ------------------------------
     # STORAGE PROVIDER DETECTION
@@ -62,7 +56,7 @@ def main():
     #     sys.exit(1)
         
     else:
-        print("error: unable to detect storage provider from STORAGE_ADDRESS. Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net")
+        print(f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address}). Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net")
         sys.exit(1)
 
 
@@ -107,7 +101,7 @@ def main():
                     )
 
                 if not success:
-                    print(f"error: failed to stream database '{db_name}' to Azure storage.")
+                    print(f"error: failed to stream database '{db_name}' to remote storage.")
                     sys.exit(1)
 
                 print(f"info: database '{db_name}' successfully uploaded. Signaling sidecar.")
