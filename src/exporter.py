@@ -1,9 +1,12 @@
 import os
 import sys
 import argparse
+import time
 
 from src.storage.azure import AzureStorage
 from src.utils.stream import is_unix_pipe, GzipStreamer, TarGenerator
+from src.kubernetes.base import KubernetesBase
+from src.utils.backup_map import resolve_backup_type_from_map
 
 
 def main():
@@ -29,6 +32,13 @@ def main():
         print(f"error: source path '{args.path}' does not exist.")
         sys.exit(1)
 
+
+    # ------------------------------
+    # BACKUP STRATEGY AUTO-RESOLUTION
+    # ------------------------------
+    kube = KubernetesBase(namespace=namespace)
+    backup_type = resolve_backup_type_from_map(kube, args.pvc, namespace)
+
     # ------------------------------
     # STORAGE PROVIDER DETECTION
     # ------------------------------
@@ -52,7 +62,7 @@ def main():
     #     sys.exit(1)
         
     else:
-        print("error: unable to detect storage provider from STORAGE_ADDRESS.")
+        print("error: unable to detect storage provider from STORAGE_ADDRESS. Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net")
         sys.exit(1)
 
 
@@ -61,36 +71,84 @@ def main():
     # BACKUP STREAM EXECUTION
     # ------------------------------
     try:
-        # Cas 1 : Le chemin est notre Tube UNIX (FIFO / pg_pipe).
-        # Il contient le flux pg_dump BRUT. On le compresse à la volée en Python.
-        if is_unix_pipe(args.path):
-            print(f"info: detected UNIX FIFO pipe at '{args.path}'. Compressing stream dynamically with gzip...")
-            with open(args.path, "rb") as pipe_stream:
-                # On enveloppe le flux brut dans notre compresseur à la volée
-                compressed_generator = GzipStreamer(pipe_stream)
-                
+        # Case 1 : path is UNIX pipe (FIFO) from sidecar container
+        if is_unix_pipe(args.path) and backup_type == "pg_dump":
+            current_db_file = '/shared/current_db'
+            print("info: starting sequential database backup loop over shared UNIX pipe...")
+
+            while True:
+                # Waiting for sidecar to give a database target
+                while not os.path.exists(current_db_file) or os.path.getsize(current_db_file) == 0:
+                    time.sleep(0.2)
+
+                with open(current_db_file, 'r') as f:
+                    db_name = f.read().strip()
+
+                # "done" is the end signal used here, it must be echo-ed from the sidecar container
+                if db_name == "done" or not db_name:
+                    print("info: sequential backup loop completed. All databases stored.")
+                    # On vide une dernière fois le fichier pour libérer le sidecar
+                    with open(current_db_file, 'w') as f:
+                        pass
+                    break
+
+                print(f"info: catching dump stream for database '{db_name}' from pipe...")
+
+                # Consumption of the pipe stream for the targetted database
+                with open(args.path, "rb") as pipe_stream:
+                    compressed_generator = GzipStreamer(pipe_stream)
+
+                    success = storage_provider.upload_stream(
+                        pvc_name=args.pvc,
+                        path=args.path,
+                        data_generator=compressed_generator,
+                        backup_type=backup_type,
+                        db_name=db_name
+                    )
+
+                if not success:
+                    print(f"error: failed to stream database '{db_name}' to Azure storage.")
+                    sys.exit(1)
+
+                print(f"info: database '{db_name}' successfully uploaded. Signaling sidecar.")
+                # Au lieu de supprimer le fichier, on le vide proprement pour passer sa taille à 0 octet
+                with open(current_db_file, 'w') as f:
+                    pass
+
+                # Simple timer before next database
+                time.sleep(1)
+
+        # Case 2 : path is a classic directory 
+        else:
+            current_db_file = '/shared/current_db'
+            if is_unix_pipe(args.path):
+                with open(args.path, "rb") as pipe_stream:
+                    compressed_generator = GzipStreamer(pipe_stream)
+                    success = storage_provider.upload_stream(
+                        pvc_name=args.pvc,
+                        path=args.path,
+                        data_generator=compressed_generator,
+                        backup_type=backup_type
+                    )
+            else:
+                print(f"info: detected directory at '{args.path}'. Initiating tar compression stream...")
+                backup_generator = TarGenerator(args.path)
                 success = storage_provider.upload_stream(
                     pvc_name=args.pvc,
                     path=args.path,
-                    data_generator=compressed_generator
+                    data_generator=backup_generator,
+                    backup_type=backup_type
                 )
 
-        # Cas 2 : Le chemin est un répertoire de stockage classique.
-        # On utilise TarGenerator pour compresser le répertoire en .tar.gz à la volée.
-        else:
-            print(f"info: detected directory at '{args.path}'. Initiating tar compression stream...")
-            backup_generator = TarGenerator(args.path)
-            success = storage_provider.upload_stream(
-                pvc_name=args.pvc,
-                path=args.path,
-                data_generator=backup_generator
-            )
+            if not success:
+                print("error: storage provider failed to upload volume stream.")
+                sys.exit(1)
 
-        if success:
+            if os.path.exists(current_db_file):
+                with open(current_db_file, 'w') as f:
+                    pass
+
             print(f"info: backup streaming process completed successfully.")
-        else:
-            print("error: storage provider failed to upload stream.")
-            sys.exit(1)
 
     except Exception as e:
         print(f"error: backup execution failed: {e}")

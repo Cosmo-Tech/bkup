@@ -14,14 +14,19 @@ class PostgresBackupJob(KubernetesBase):
 
 
     def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs):
-        """Backup PostgreSQL database with pg_dump."""        
+        """Backup PostgreSQL database with pg_dump."""
+        postgres_image = kwargs.get("postgres_image")
+        if not postgres_image:
+            raise ValueError("postgres_image parameter is required.")
         replacements = {
             "JOB_NAME": self.get_job_name(pvc_name),
             "NAMESPACE": self.namespace,
             "MOUNTED_PATH": mounted_path,
             "PVC_NAME": pvc_name,
-            "POSTGRES_IMAGE": kwargs.get("postgres_image", "postgres:latest"),
+            "POSTGRES_IMAGE": postgres_image,
+            "POSTGRES_HOST": kwargs.get("postgres_host", "localhost"),
             "IMAGE_PULL_SECRETS_LIST": kwargs.get("image_pull_secrets", []),
+            "original_env_block": kwargs.get("original_env_block", ""),
             "AFFINITY_DICT": {
                 "nodeAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": {

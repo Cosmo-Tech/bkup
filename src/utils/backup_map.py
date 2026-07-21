@@ -85,8 +85,6 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                         break
 
             print(f"      backup-type: {backup_type}")
-            # print(f"      status: {pvc['status']}")
-            # print(f"      capacity: {pvc['capacity']}")
             
             node_name = kube.get_node_name(pvc['name'])
             print(f"      attachment-node: {node_name}")
@@ -94,8 +92,6 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             pvc_data = {
                 "name": pvc['name'],
                 "backup-type": backup_type,
-                # "status": pvc['status'],
-                # "capacity": pvc['capacity'],
                 "attachment-node": node_name,
                 "mounts": []
             }
@@ -105,13 +101,11 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                 for m in mounts:
                     print(f"      - container: {m['container_name']}")
                     print(f"        path: {m['mount_path']}")
-                    # print(f"        read_only: {m['read_only']}")
                     print(f"        resource: {m['resource']}")
                     
                     pvc_data["mounts"].append({
                         "container": m['container_name'],
                         "path": m['mount_path'],
-                        # "read_only": m['read_only'],
                         "resource": m['resource']
                     })
             else:
@@ -126,10 +120,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
 
 
 def get_pvc_from_map(kube_client, pvc_name: str) -> list:
-    """
-    Reverse lookup utility searching for workload attachments associated 
-    with a given PVC name inside the cluster's saved backup-map ConfigMap.
-    """
+    """Reverse lookup utility searching for workload attachments associated with a given PVC."""
     try:
         # Fetch the current unpacked map layout via our agnostic ConfigMap utility
         backup_map = get_backup_map(kube_client)
@@ -148,3 +139,24 @@ def get_pvc_from_map(kube_client, pvc_name: str) -> list:
     except Exception as e:
         print(f"  warn: map reverse lookup failed for PVC '{pvc_name}': {e}")
         return []
+
+
+def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
+    """Interroge la ConfigMap de backup-map pour récupérer automatiquement la stratégie du PVC."""
+    try:
+        backup_map = get_backup_map(kube)
+        
+        if not backup_map or "namespaces" not in backup_map:
+            print("warn: backup-map not found, defaulting type to 'unknown'")
+            return "unknown"
+
+        for ns in backup_map.get("namespaces", []):
+            if ns.get("name") == namespace:
+                for claim in ns.get("claims", []):
+                    if claim.get("name") == pvc_name:
+                        return claim.get("backup-type", "volume")
+
+    except Exception as e:
+        print(f"  warn: failed to resolve backup-type from map ({e}). Fallback to 'unknown'.")
+        
+    return "unknown"

@@ -55,7 +55,7 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
     # 2. Restauration des réplicas (priorité à la mémoire vive de la session, sinon fallback ConfigMap)
     if backup_workloads_map:
         for resource_key, info in backup_workloads_map.items():
-            if info["initial_replicas"] > 0:
+            if info.get("should_scale", True) and info["initial_replicas"] > 0:
                 print(f"  info: [RESTORE] restoring {resource_key} to {info['initial_replicas']} replicas...")
                 kube_client.namespace = info["namespace"]
                 kube_client.scale_replicas(
@@ -96,6 +96,26 @@ def restore_production_on_signal(signum, frame):
 
     print("info: rollback finished. exiting.")
     sys.exit(1)
+
+
+def get_postgres_pod_ip(kube, namespace: str, pvc_name: str) -> str:
+    """Find the exact IP of the running Postgres Pod mounted on the target PVC."""
+    try:
+        pods = kube.core_v1.list_namespaced_pod(namespace=namespace)
+        for pod in pods.items:
+            if pod.status.phase != "Running":
+                continue
+
+            if pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                        if pod.status.pod_ip:
+                            print(f"  info: detected active Postgres Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}")
+                            return pod.status.pod_ip
+    except Exception as e:
+        print(f"  warn: failed to resolve active pod IP for PVC '{pvc_name}': {e}")
+
+    raise RuntimeError(f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{namespace}'")
 
 
 def run_backup_job(cluster_context: str, namespace: str):
@@ -165,8 +185,15 @@ def run_backup_job(cluster_context: str, namespace: str):
             resource_type, resource_name = target['resource'].split('/')
             mounted_path = target['mount_path']
 
+            mount_info = {
+                "container": resource_name,
+                "resource": resource_type
+            }
+            is_postgres = psql.is_postgresql_workload(mount_info)
+            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads in V1
+
             if resource_key not in backup_workloads:
-                if kube.is_topology_constrained(pvc_name):
+                if should_scale and kube.is_topology_constrained(pvc_name):
                     node_name = kube.get_node_name(pvc_name)
                 else:
                     print(f"   info: Remote/Cloud Storage layout validation verified. Dynamic scheduling bypass enabled.")
@@ -178,7 +205,8 @@ def run_backup_job(cluster_context: str, namespace: str):
                     print(f"  info: Found cached replica count for {resource_key}: {initial_replicas}")
                 else:
                     initial_replicas = kube.get_replicas(resource_type, resource_name)
-                    bpc.update_cached_replicas(cache_data, namespace, resource_type, resource_name, initial_replicas)
+                    if should_scale:
+                        bpc.update_cached_replicas(cache_data, namespace, resource_type, resource_name, initial_replicas)
 
                 backup_workloads[resource_key] = {
                     "namespace": namespace,
@@ -187,29 +215,35 @@ def run_backup_job(cluster_context: str, namespace: str):
                     "initial_replicas": initial_replicas,
                     "pvc_name": pvc_name,
                     "mounted_path": mounted_path,
-                    "node_name": node_name
+                    "node_name": node_name,
+                    "should_scale": should_scale,
+                    "is_postgres": is_postgres
                 }
 
         bpc.save_backup_cache(kube, cache_data, master_ns)
 
-        # Procéder au scale-down effectif
+        # Scale down workloads
         for resource_key, info in backup_workloads.items():
-            if info["initial_replicas"] > 0:
-                kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=0)
+            if info["should_scale"]:
+                if info["initial_replicas"] > 0:
+                    kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=0)
+                else:
+                    print(f"  info: {resource_key} is already stopped.")
             else:
-                print(f"  info: {resource_key} is already stopped (Night mode).")
+                print(f"  info: {resource_key} is PostgreSQL — leaving replicas running ({info['initial_replicas']}) for online pg_dump.")
+
 
         # ==================================================
         # PHASE 2 : WAIT FOR COMPLETE EXCLUSIVITY
         # ==================================================
-        print("\nPHASE 2: Waiting for all workloads to be fully stopped...")
+        print("\nPHASE 2: Waiting for scaled-down workloads to stop...")
         for resource_key, info in backup_workloads.items():
-            if info["namespace"] == namespace and info["initial_replicas"] > 0:
+            if info["namespace"] == namespace and info["should_scale"] and info["initial_replicas"] > 0:
                 kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
 
         print("\nensure PVC are not attached anymore...")
         for resource_key, info in backup_workloads.items():
-            if info["namespace"] == namespace:
+            if info["namespace"] == namespace and info["should_scale"]:
                 kube.wait_for_volume_detachment(info["pvc_name"])
 
         # ==================================================
@@ -220,26 +254,43 @@ def run_backup_job(cluster_context: str, namespace: str):
 
         for resource_key, info in backup_workloads.items():
             if info["namespace"] == namespace:
-
-                mount_info = {
-                    "container": info["resource_name"],
-                    "resource": info["resource_type"]
-                }
-
                 pull_secrets = kube.get_image_pull_secrets(info["resource_type"], info["resource_name"])
 
-                if psql.is_postgresql_workload(mount_info):
-                    print(f"  info: {resource_key} identified as PostgreSQL database. Routing via child worker...")
+                if info["is_postgres"]:
+                    print(f"  info: {resource_key} identified as PostgreSQL database. Routing via pg_dump worker...")
                     worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
                     postgres_image = worker.get_workload_image(info["resource_type"], info["resource_name"])
+
+                    original_env_raw = []
+                    try:
+                        if info["resource_type"].lower() == "statefulset":
+                            res_obj = kube.apps_v1.read_namespaced_stateful_set(name=info["resource_name"], namespace=namespace)
+                        else:
+                            res_obj = kube.apps_v1.read_namespaced_deployment(name=info["resource_name"], namespace=namespace)
+                        
+                        if res_obj.spec.template.spec.containers[0].env:
+                            original_env_raw = kube.core_v1.api_client.sanitize_for_serialization(res_obj.spec.template.spec.containers[0].env)
+                    except Exception as e:
+                        print(f"  warn: failed to extract original env block layout ({e}). Proceeding blank.")
+
+                    if original_env_raw:
+                        yaml_text = yaml.dump(original_env_raw, default_flow_style=False)
+                        indentation = " " * 12
+                        original_env_block = "".join(f"{indentation}{line}\n" for line in yaml_text.splitlines())
+                    else:
+                        original_env_block = ""
+
+                    postgres_host = get_postgres_pod_ip(kube, namespace, info["pvc_name"])
 
                     worker.create_backup_job(
                         pvc_name=info["pvc_name"],
                         mounted_path=info["mounted_path"],
                         node_name=info["node_name"],
                         postgres_image=postgres_image,
+                        postgres_host=postgres_host,
                         image_pull_secrets=pull_secrets,
-                        suffix=worker.suffix
+                        suffix=worker.suffix,
+                        original_env_block=original_env_block
                     )
                 else:
                     print(f"  info: {resource_key} identified as standard volume. Routing via standard worker...")
@@ -260,6 +311,7 @@ def run_backup_job(cluster_context: str, namespace: str):
         print("\nWaiting for backup jobs to complete before scaling back up...")
         for job_to_wait in active_jobs_to_track:
             kube.wait_for_job_completion(job_name=job_to_wait)
+            # kube.wait_for_job_completion(job_name=job_to_wait, timeout=30)
 
     finally:
         # ==================================================
@@ -283,7 +335,6 @@ def main():
     # SIGTERM = Kubernetes Pod killed
     signal.signal(signal.SIGTERM, restore_production_on_signal)
 
-
     parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
     parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
     parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace (comma-separated or 'all')")
@@ -291,7 +342,6 @@ def main():
     parser.add_argument("-gm", "--get-map", action="store_true", help="Display backup-map")
     parser.add_argument("-rm", "--refresh-map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
     args = parser.parse_args()
-
 
     cluster_name_env = os.getenv("CLUSTER_NAME")
     namespace_env = os.getenv("NAMESPACE")

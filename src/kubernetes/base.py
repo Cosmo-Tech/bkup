@@ -204,16 +204,25 @@ class KubernetesBase:
 
 
     def get_workload_image(self, resource_type: str, resource_name: str) -> str:
+        """Extract exact container image used by workload. Raises ValueError if missing."""
         try:
             if resource_type.lower() == "statefulset":
                 sts = self.apps_v1.read_namespaced_stateful_set(name=resource_name, namespace=self.namespace)
-                return sts.spec.template.spec.containers[0].image
+                containers = sts.spec.template.spec.containers
+
             elif resource_type.lower() == "deployment":
                 deploy = self.apps_v1.read_namespaced_deployment(name=resource_name, namespace=self.namespace)
-                return deploy.spec.template.spec.containers[0].image
-        except Exception:
-            return "postgres:latest"
-        return "postgres:latest"
+                containers = deploy.spec.template.spec.containers
+
+            else:
+                raise ValueError(f"Unsupported resource type '{resource_type}'")
+
+            if containers and containers[0].image:
+                return containers[0].image
+        except Exception as e:
+            raise ValueError(f"Failed to read image for {resource_type}/{resource_name}: {e}")
+
+        raise ValueError(f"No image defined on container for {resource_type}/{resource_name}")
 
 
     def get_configmap(self, name: str, namespace: str) -> dict:
@@ -325,11 +334,17 @@ class KubernetesBase:
             template_content = f.read()
 
         rendered = template_content
-        rendered = rendered.replace("{{ JOB_NAME }}", replacements["JOB_NAME"])
-        rendered = rendered.replace("{{ NAMESPACE }}", replacements["NAMESPACE"])
-        rendered = rendered.replace("{{ PVC_NAME }}", replacements["PVC_NAME"])
-        rendered = rendered.replace("{{ MOUNTED_PATH }}", replacements["MOUNTED_PATH"])
-        rendered = rendered.replace("{{ POSTGRES_IMAGE }}", replacements["POSTGRES_IMAGE"])
+        rendered = rendered.replace("{{ JOB_NAME }}", replacements.get("JOB_NAME", ""))
+        rendered = rendered.replace("{{ NAMESPACE }}", replacements.get("NAMESPACE", ""))
+        rendered = rendered.replace("{{ PVC_NAME }}", replacements.get("PVC_NAME", ""))
+        rendered = rendered.replace("{{ MOUNTED_PATH }}", replacements.get("MOUNTED_PATH", ""))
+
+        if "{{ POSTGRES_IMAGE }}" in rendered:
+            if "POSTGRES_IMAGE" not in replacements or not replacements["POSTGRES_IMAGE"]:
+                raise ValueError("POSTGRES_IMAGE missing from replacements. Exact workload image is required.")
+            rendered = rendered.replace("{{ POSTGRES_IMAGE }}", replacements["POSTGRES_IMAGE"])
+
+        rendered = rendered.replace("{{ ORIGINAL_ENV_BLOCK }}", replacements.get("original_env_block", ""))
 
         job_manifest = yaml.safe_load(rendered)
         pod_spec = job_manifest["spec"]["template"]["spec"]
@@ -347,24 +362,52 @@ class KubernetesBase:
             {"operator": "Exists", "effect": "NoExecute"}
         ]
 
-        # Injection dynamique inter-namespace des secrets au niveau de l'arborescence des conteneurs
+        # Process container environment variables
         for container in pod_spec["containers"]:
-            if "env" in container:
-                # Filtrage et remplacement des valueFrom par des valeurs directes
-                new_env = []
-                for env_item in container["env"]:
-                    name = env_item["name"]
-                    if name == "STORAGE_ADDRESS":
-                        new_env.append({"name": name, "value": secret_data.get("storage-address", "changeme")})
-                    elif name == "STORAGE_USERNAME":
-                        new_env.append({"name": name, "value": secret_data.get("storage-username", "changeme")})
-                    elif name == "STORAGE_PASSWORD":
-                        new_env.append({"name": name, "value": secret_data.get("storage-password", "changeme")})
-                    elif name == "CLUSTER_NAME":
-                        new_env.append({"name": name, "value": secret_data.get("cluster-name", "changeme")})
-                    else:
-                        new_env.append(env_item)
-                container["env"] = new_env
+            c_name = container.get("name")
+            clean_env = []
+            final_overrides = {}
+
+            raw_env = container.get("env") or []
+
+            for env_item in raw_env:
+                name = env_item.get("name")
+                
+                if name == "STORAGE_ADDRESS":
+                    val = secret_data.get("storage-address")
+                    if not val:
+                        raise ValueError(f"Required key 'storage-address' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')")
+                    final_overrides[name] = {"name": name, "value": val}
+
+                elif name == "STORAGE_USERNAME":
+                    val = secret_data.get("storage-username")
+                    if not val:
+                        raise ValueError(f"Required key 'storage-username' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')")
+                    final_overrides[name] = {"name": name, "value": val}
+
+                elif name == "STORAGE_PASSWORD":
+                    val = secret_data.get("storage-password")
+                    if not val:
+                        raise ValueError(f"Required key 'storage-password' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')")
+                    final_overrides[name] = {"name": name, "value": val}
+
+                elif name == "CLUSTER_NAME":
+                    val = secret_data.get("cluster-name")
+                    if not val:
+                        raise ValueError(f"Required key 'cluster-name' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')")
+                    final_overrides[name] = {"name": name, "value": val}
+
+                else:
+                    clean_env.append(env_item)
+
+                # Insertion finale des secrets résolus
+                for override_item in final_overrides.values():
+                    clean_env.append(override_item)
+
+            if c_name == "database-dumper" and replacements.get("POSTGRES_HOST"):
+                clean_env.append({"name": "POSTGRES_HOST", "value": replacements["POSTGRES_HOST"]})
+                
+                container["env"] = clean_env
 
         job_name = job_manifest["metadata"]["name"]
 
@@ -420,7 +463,7 @@ class KubernetesBase:
                     return False
                 return True
         except Exception as e:
-            print(f"     warn: storage topology assessment bypassed ({e}). Defaulting to constrained.")
+            print(f"      warn: storage topology assessment bypassed ({e}). Defaulting to constrained.")
         return True
 
 
@@ -457,7 +500,7 @@ class KubernetesBase:
                 print(f"     warn: error tracking pods storage locks ({e}), retrying...")
             time.sleep(check_interval)
 
-        print(f"   warn: timeout reached while waiting for PVC '{pvc_name}' to be released. Proceeding anyway...")
+        print(f"    warn: timeout reached while waiting for PVC '{pvc_name}' to be released. Proceeding anyway...")
         return False
 
 

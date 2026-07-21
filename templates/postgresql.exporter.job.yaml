@@ -1,3 +1,7 @@
+# ----- ARCHITECTURE -----
+# database (running psql instance) --> database-dumper (pg_dump) --> [UNIX pipe] --> worker (python code to transfer data to remote storage)
+# ------------------------
+
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -8,28 +12,32 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      restartPolicy: Never
+      restartPolicy: Never    
       containers:
         # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
-        - name: postgres-backup-worker
+        - name: worker
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This script waits for a UNIX pipe from the sidecar container to get the right PostgreSQL binaries
+              # This script waits for a UNIX pipe from the sidecar container (this is to to use the right PostgreSQL binaries)
               pipe='/shared/pg_pipe'
-              ready_flag='/shared/sidecar_ready'
 
               echo "waiting for sidecar UNIX pipe at $pipe..."
-              until [ -f "$ready_flag" ] && [ -p "$pipe" ]; do
-                sleep 1
+              timer=1
+              until [ -p "$pipe" ]; do
+                sleep $timer
+                timer=$(($timer+1))
+                echo "waited $timer"
               done
 
               echo "Getting backup from sidecar..."
 
               # Use the pipe as path arg for the exporter 
               python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe"
+
+              sleep 11111111111111
           resources:
             requests:
               cpu: "250m"
@@ -53,65 +61,82 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: PGHOST
-              value: "127.0.0.1"
-            - name: PGPORT
-              value: "5432"
-            - name: PGUSER
-              value: "postgres"
 
-        # --- SIDE CAR CONTAINER: Target production database providing version-matched binaries ---
-        - name: postgres-engine-provider
+        # --- SIDECAR CONTAINER #2: Dump the database (with the original image binaries) ---
+        - name: database-dumper
           image: "{{ POSTGRES_IMAGE }}" # Get the real used image used
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This script create a UNIX pipe to share the PostgreSQL binaries
-              pipe='/shared/pg_pipe'
-              ready_flag='/shared/sidecar_ready'
+              set -x
+              # This script create a UNIX pipe to talk with the worker
 
-              rm -f "$pipe" "$ready_flag"
+              pipe='/shared/pg_pipe'
+              current_db='/shared/current_db'
+
+              rm -f "$pipe" "$ready_flag" "$current_db"
+
+
+
+              # -------------------------------------------
+              #  UNIX PIPE TO SEND DATA TO THE WORKER
+              # -------------------------------------------
+
+              # Create UNIX pipe to talk with the worker
               mkfifo "$pipe"
-              
               if [ -p "$pipe" ]; then
                 echo "sucessfully created UNIX pipe at $pipe"
               else
                 echo 'error: UNIX pipe not created, cannot get pg binaries'
                 exit 1
               fi
+
+
+
+              # -------------------------------------------
+              #  DATA DUMP
+              # -------------------------------------------
+
+                # Target Postgres host resolution from environment variable
+              TARGET_HOST="${PGHOST:-$POSTGRES_HOST}"
+              TARGET_PORT="${PGPORT:-5432}"
+
+              echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT..."
+              until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" >/dev/null 2>&1; do
+                sleep 2
+                echo "Waiting for database connection..."
+              done
+
+              # Discover user if PGUSER is not preset
+              TARGET_USER="${PGUSER:-postgres}"
               
-              # Simple flag to be sure the sidecar is running before the main container
-              echo '' > "$ready_flag"
-              if [ -f "$ready_flag" ]; then
-                echo "successfully created sidecar ready-flag"
-              else
-                echo 'error: sidecar ready-flag not created, cannot continue'
-                exit 1
-              fi
- 
-              echo "Sidecar bootstrap finished, flag created."
 
-              # Simple data dump to the pipe
-              echo "starting database dump to UNIX pipe..."
-              pg_dump > "$pipe"
+              # List all databases
+              db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'")
 
-              rm -f "$ready_flag"
+              echo "starting database(s) dump to UNIX pipe..."
+              for db in $db_list; do
+                echo "$db" > "$current_db"
+
+                # Dump data to pipe
+                pg_dump -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -d "$db" > "$pipe"
+
+                # Ensure dump is consumed by worker
+                while [ -s "$current_db" ]; do
+                  sleep 1
+                done
+              done
+
+              # "done" is the signal for that Python is waiting in the worker
+              echo "done" > "$current_db"
+
+
+              sleep 11111111111111
           volumeMounts:
-            - name: volume-to-backup
-              mountPath: "{{ MOUNTED_PATH }}"
-              readOnly: true
             - name: shared
               mountPath: /shared
           env:
-            - name: PGHOST
-              value: "127.0.0.1"
-            - name: PGPORT
-              value: "5432"
-            - name: PGUSER
-              value: "postgres"
+{{ ORIGINAL_ENV_BLOCK }}
       volumes:
-        - name: volume-to-backup
-          persistentVolumeClaim:
-            claimName: "{{ PVC_NAME }}"
         - name: shared
-          emptyDir: {} # Shared space where to find pg_dump
+          emptyDir: {} # Shared space between all containers

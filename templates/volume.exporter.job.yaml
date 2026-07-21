@@ -19,7 +19,7 @@ spec:
                     values:
                       - "{{ NODE_NAME }}"
       containers:
-        - name: backup-worker-volume
+        - name: worker
           image: ghcr.io/cosmo-tech/clustersnap:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.exporter"]
