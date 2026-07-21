@@ -132,14 +132,9 @@ def get_postgresql_claim_config_from_map(kube, pvc_name: str, namespace: str) ->
     return {}
 
 
-def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, pg_map_config: dict) -> list:
-    """Reads secretKeyRef objects from raw_env, decodes Secret values, and explicitly sets PGPASSWORD & PGUSER."""
+def resolve_container_env_secrets(kube, namespace: str, raw_env: list) -> list:
+    """Decode any secretKeyRef references in container env list into concrete values."""
     resolved_env = []
-    found_password = None
-    found_user = None
-
-    custom_pass_var = pg_map_config.get("password-env")
-    custom_user_var = pg_map_config.get("user-env")
 
     for item in raw_env:
         if not isinstance(item, dict):
@@ -149,7 +144,6 @@ def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, pg_map_
         value = item.get("value")
         value_from = item.get("valueFrom") or item.get("value_from")
 
-        # Resolve secretKeyRef dynamically
         if value_from and isinstance(value_from, dict):
             sec_ref = value_from.get("secretKeyRef") or value_from.get("secret_key_ref")
             if sec_ref:
@@ -160,28 +154,53 @@ def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, pg_map_
                     if sec_key in payload:
                         value = payload[sec_key]
                         resolved_env.append({"name": name, "value": value})
-
-                        if (custom_pass_var and name == custom_pass_var) or (not custom_pass_var and ("PASSWORD" in name.upper() or "PASS" in name.upper())):
-                            found_password = value
-                        if (custom_user_var and name == custom_user_var) or (not custom_user_var and ("USER" in name.upper() and "PASSWORD" not in name.upper())):
-                            found_user = value
                         continue
                 except Exception as e:
-                    print(f"  warn: failed to resolve secretKeyRef for {name} ({e})")
+                    print(f"  warn: failed to resolve secretKeyRef for variable '{name}' ({e})")
 
         if value is not None:
             resolved_env.append({"name": name, "value": value})
-            if (custom_pass_var and name == custom_pass_var) or (not custom_pass_var and ("PASSWORD" in name.upper() or "PASS" in name.upper())):
-                found_password = value
-            if (custom_user_var and name == custom_user_var) or (not custom_user_var and ("USER" in name.upper() and "PASSWORD" not in name.upper())):
-                found_user = value
 
-    # Explicitly inject PGPASSWORD & PGUSER if found
-    if found_password and not any(e.get("name") == "PGPASSWORD" for e in resolved_env):
-        resolved_env.append({"name": "PGPASSWORD", "value": found_password})
+    return resolved_env
 
-    if found_user and not any(e.get("name") == "PGUSER" for e in resolved_env):
-        resolved_env.append({"name": "PGUSER", "value": found_user})
+
+def build_strict_postgres_job_env(kube, namespace: str, raw_env: list, pg_map_config: dict, target_ip: str) -> list:
+    """
+    STRICT COMPLIANCE WITH BACKUP-MAP (NO FALLBACKS):
+    Explicitly map keys configured in backup-map (password-env, user-env, db-env, port, host)
+    to standard PostgreSQL environment variables (PGPASSWORD, PGUSER, PGDATABASE, PGHOST, PGPORT).
+    Raises ValueError if required configurations are absent.
+    """
+    resolved_env = resolve_container_env_secrets(kube, namespace, raw_env)
+    env_dict = {e["name"]: e["value"] for e in resolved_env if "name" in e and "value" in e}
+
+    pass_key = pg_map_config.get("password-env")
+    user_key = pg_map_config.get("user-env")
+    db_key = pg_map_config.get("db-env")
+
+    # 1. Host
+    host_val = pg_map_config.get("host") or target_ip
+    resolved_env.append({"name": "PGHOST", "value": host_val})
+
+    # 2. Port
+    port_val = str(pg_map_config.get("port", 5432))
+    resolved_env.append({"name": "PGPORT", "value": port_val})
+
+    # 3. User
+    if user_key:
+        if user_key not in env_dict:
+            raise ValueError(f"Configured 'user-env' key '{user_key}' not found in workload environment.")
+        resolved_env.append({"name": "PGUSER", "value": env_dict[user_key]})
+
+    # 4. Password
+    if pass_key:
+        if pass_key not in env_dict:
+            raise ValueError(f"Configured 'password-env' key '{pass_key}' not found in workload environment.")
+        resolved_env.append({"name": "PGPASSWORD", "value": env_dict[pass_key]})
+
+    # 5. Database (Optional)
+    if db_key and db_key in env_dict:
+        resolved_env.append({"name": "PGDATABASE", "value": env_dict[db_key]})
 
     return resolved_env
 
@@ -330,6 +349,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                     postgres_image = worker.get_workload_image(info["resource_type"], info["resource_name"])
 
                     pg_map_config = get_postgresql_claim_config_from_map(kube, info["pvc_name"], namespace)
+                    target_ip = get_postgres_pod_ip(kube, namespace, info["pvc_name"])
 
                     original_env_raw = []
                     original_env_from_raw = []
@@ -342,31 +362,21 @@ def run_backup_job(cluster_context: str, namespace: str):
                         c_spec = res_obj.spec.template.spec.containers[0]
                         if c_spec.env:
                             raw_env = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env)
-                            original_env_raw = resolve_and_enrich_postgres_env(kube, namespace, raw_env, pg_map_config)
+                            original_env_raw = build_strict_postgres_job_env(kube, namespace, raw_env, pg_map_config)
 
                         if c_spec.env_from:
                             original_env_from_raw = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env_from)
                     except Exception as e:
                         print(f"  warn: failed to extract original env block layout ({e}). Proceeding blank.")
 
-                    if original_env_raw:
-                        yaml_text = yaml.dump(original_env_raw, default_flow_style=False)
-                        indentation = " " * 12
-                        original_env_block = "".join(f"{indentation}{line}\n" for line in yaml_text.splitlines())
-                    else:
-                        original_env_block = ""
-
-                    postgres_host = pg_map_config.get("host") or get_postgres_pod_ip(kube, namespace, info["pvc_name"])
-
                     worker.create_backup_job(
                         pvc_name=info["pvc_name"],
                         mounted_path=info["mounted_path"],
                         node_name=info["node_name"],
                         postgres_image=postgres_image,
-                        postgres_host=postgres_host,
                         image_pull_secrets=pull_secrets,
                         suffix=worker.suffix,
-                        original_env_block=original_env_block,
+                        dumper_env_list=original_env_raw,
                         original_env_from=original_env_from_raw
                     )
                 else:

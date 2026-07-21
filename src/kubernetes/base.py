@@ -306,12 +306,9 @@ class KubernetesBase:
         if len(candidate_name) <= 63:
             return candidate_name
             
-        # Si ça déborde (ex: AKS), calcul de la taille disponible pour la sous-chaîne PVC
-        # prefix (19 chars) + suffix_str (8-9 chars) + hash d'unicité (8 chars) + séparateurs (2 chars)
+        # Cut name & set a hash if too long
         pvc_hash = hashlib.md5(pvc_name.encode('utf-8')).hexdigest()[:8]
         allowed_pvc_len = 63 - (len(prefix) + len(pvc_hash) + 1 + len(suffix_str))
-        
-        # Troncature propre de la chaîne du PVC
         truncated_pvc = pvc_name[:allowed_pvc_len]
         return f"{prefix}{truncated_pvc}-{pvc_hash}{suffix_str}"
 
@@ -319,7 +316,6 @@ class KubernetesBase:
     def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs) -> dict:
         """Create a base job layout configuration block."""
         return {}
-
 
 
     def _launch_generic_job(self, template_path: str, replacements: dict):
@@ -343,8 +339,6 @@ class KubernetesBase:
             if "POSTGRES_IMAGE" not in replacements or not replacements["POSTGRES_IMAGE"]:
                 raise ValueError("POSTGRES_IMAGE missing from replacements. Exact workload image is required.")
             rendered = rendered.replace("{{ POSTGRES_IMAGE }}", replacements["POSTGRES_IMAGE"])
-
-        rendered = rendered.replace("{{ ORIGINAL_ENV_BLOCK }}", replacements.get("original_env_block", ""))
 
         job_manifest = yaml.safe_load(rendered)
         pod_spec = job_manifest["spec"]["template"]["spec"]
@@ -374,11 +368,18 @@ class KubernetesBase:
             clean_env = []
             final_overrides = {}
 
-            raw_env = container.get("env") or []
+            # If container is database-dumper and Python prepared a dumper_env_list
+            if c_name == "database-dumper" and replacements.get("DUMPER_ENV_LIST"):
+                raw_env = replacements["DUMPER_ENV_LIST"]
+            else:
+                raw_env = container.get("env") or []
 
             for env_item in raw_env:
+                if not isinstance(env_item, dict):
+                    continue
+
                 name = env_item.get("name")
-                
+
                 if name == "STORAGE_ADDRESS":
                     val = secret_data.get("storage-address")
                     if not val:
@@ -409,9 +410,7 @@ class KubernetesBase:
             for override_item in final_overrides.values():
                 clean_env.append(override_item)
 
-            if c_name == "database-dumper" and replacements.get("POSTGRES_HOST"):
-                clean_env.append({"name": "POSTGRES_HOST", "value": replacements["POSTGRES_HOST"]})
-                
+            # Re-assign updated env to container spec
             container["env"] = clean_env
 
         job_name = job_manifest["metadata"]["name"]

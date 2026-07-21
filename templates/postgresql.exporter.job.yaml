@@ -97,14 +97,36 @@ spec:
               #  DATA DUMP
               # -------------------------------------------
 
-                # Target Postgres host resolution from environment variable
-              TARGET_HOST="${PGHOST:-$POSTGRES_HOST}"
-              TARGET_PORT="${PGPORT:-5432}"
 
-              # Password directly injected by Python into PGPASSWORD
-              export PGPASSWORD="${PGPASSWORD}"
+              # Strict environment variables enforcement (NO FALLBACKS)
+              if [ -z "$PGHOST" ]; then
+                echo "error: PGHOST environment variable is missing."
+                exit 1
+              fi
 
-              TARGET_USER="${PGUSER:-${POSTGRES_USER:-${POSTGRESQL_USERNAME:-postgres}}}"
+              if [ -z "$PGPORT" ]; then
+                echo "error: PGPORT environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGUSER" ]; then
+                echo "error: PGUSER environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGPASSWORD" ]; then
+                echo "error: PGPASSWORD environment variable is missing."
+                exit 1
+              fi
+
+              TARGET_HOST="$PGHOST"
+              TARGET_PORT="$PGPORT"
+              TARGET_USER="$PGUSER"
+
+              # If PGPASSWORD points to a mounted secret file, read file content
+              if [ -f "$PGPASSWORD" ]; then
+                export PGPASSWORD=$(cat "$PGPASSWORD")
+              fi
 
               echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
               until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" >/dev/null 2>&1; do
@@ -114,17 +136,17 @@ spec:
               
 
               # List databases
-              db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
-
-              # Fallback if query returns empty (e.g. non-superuser connected)
-              if [ -z "$db_list" ]; then
-                target_db="${POSTGRES_DB:-${POSTGRESQL_DATABASE:-$PGDATABASE}}"
-                if [ -n "$target_db" ]; then
-                  db_list="$target_db"
-                else
-                  db_list="$TARGET_USER"
-                fi
+              if [ -n "$PGDATABASE" ]; then
+                db_list="$PGDATABASE"
+              else
+                db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
               fi
+
+              if [ -z "$db_list" ]; then
+                echo "error: no database found or access denied for user '$TARGET_USER'"
+                exit 1
+              fi
+
               echo "starting database(s) dump to UNIX pipe..."
               for db in $db_list; do
                 echo "$db" > "$current_db"
@@ -152,8 +174,7 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: /shared
-          env:
-{{ ORIGINAL_ENV_BLOCK }}
+
       volumes:
         - name: shared
           emptyDir: {} # Shared space between all containers
