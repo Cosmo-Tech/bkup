@@ -30,18 +30,26 @@ class AzureStorage(Storage):
             raise RuntimeError(f"Critical: Failed to verify/create Azure container: {e}")
 
 
-    def upload_stream(self, pvc_name: str, path: str, data_generator) -> bool:
+    def upload_stream(self, pvc_name: str, path: str, data_generator, backup_type: str = None, db_name: str = None) -> bool:
         date_str = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         
-        # Layout: disks/pvc_name/pvc_name-timestamp.tar.gz
-        blob_path = f"disks/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
+        # Layout: <backup-type>/pvc_name/pvc_name-timestamp.tar.gz
+        if backup_type == "pg_dump":
+            target_file_name = f"{pvc_name}-{db_name}" if db_name else pvc_name
+            blob_path = f"psql/{pvc_name}/{target_file_name}-{date_str}.sql.gz"
+
+        elif backup_type == "volume":
+            blob_path = f"volumes/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
+
+        else:
+            blob_path = f"unknown/{pvc_name}/{pvc_name}-{date_str}.tar.gz"
 
         try:
             blob_client = self.client.get_blob_client(
                 container=self.blob_container, 
                 blob=blob_path
             )
-            
+
             print(f"info: uploading directly to '{blob_path}'...")
             
             # The Azure SDK natively supports data generators for chunked upload

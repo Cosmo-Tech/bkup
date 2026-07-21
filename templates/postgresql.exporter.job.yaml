@@ -1,0 +1,167 @@
+# ----- ARCHITECTURE -----
+# database (running psql instance) --> database-dumper (pg_dump) --> [UNIX pipe] --> worker (python code to transfer data to remote storage)
+# ------------------------
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ NAMESPACE }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never    
+      containers:
+        # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
+        - name: worker
+          image: ghcr.io/cosmo-tech/clustersnap:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # This script waits for a UNIX pipe from the sidecar container (this is to to use the right PostgreSQL binaries)
+              pipe='/shared/pg_pipe'
+
+              echo "waiting for sidecar UNIX pipe at $pipe..."
+              timer=1
+              until [ -p "$pipe" ]; do
+                sleep $timer
+                timer=$(($timer+1))
+                echo "waited $timer"
+              done
+
+              echo "Getting backup from database-dumper..."
+
+              # Use the pipe as path arg for the exporter 
+              python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe" --type pg_dump
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          env:
+            - name: STORAGE_ADDRESS
+              value: "templated"
+            - name: STORAGE_USERNAME
+              value: "templated"
+            - name: STORAGE_PASSWORD
+              value: "templated"
+            - name: CLUSTER_NAME
+              value: "templated"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+        # --- SIDECAR CONTAINER #2: Dump the database (with the original image binaries) ---
+        - name: database-dumper
+          image: "{{ POSTGRES_IMAGE }}" # Get the real used image used
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # This script create a UNIX pipe to talk with the worker
+
+              pipe='/shared/pg_pipe'
+              current_db='/shared/current_db'
+
+              rm -f "$pipe" "$current_db"
+
+
+              # -------------------------------------------
+              #  UNIX PIPE TO SEND DATA TO THE WORKER
+              # -------------------------------------------
+              mkfifo "$pipe"
+              if [ -p "$pipe" ]; then
+                echo "successfully created UNIX pipe at $pipe"
+              else
+                echo 'error: UNIX pipe not created, cannot get pg binaries'
+                exit 1
+              fi
+
+
+              # -------------------------------------------
+              #  DATA DUMP
+              # -------------------------------------------
+              if [ -z "$PGHOST" ]; then
+                echo "error: PGHOST environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGPORT" ]; then
+                echo "error: PGPORT environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGUSER" ]; then
+                echo "error: PGUSER environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGPASSWORD" ]; then
+                echo "error: PGPASSWORD environment variable is missing."
+                exit 1
+              fi
+
+              TARGET_HOST="$PGHOST"
+              TARGET_PORT="$PGPORT"
+              TARGET_USER="$PGUSER"
+
+              # If PGPASSWORD points to a mounted secret file, read file content
+              if [ -f "$PGPASSWORD" ]; then
+                PGPASSWORD=$(cat "$PGPASSWORD")
+              fi
+
+              echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
+              until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" >/dev/null 2>&1; do
+                echo "Waiting for database connection..."
+                sleep 2
+              done
+              
+
+              # List databases
+              if [ -n "$PGDATABASE" ]; then
+                db_list="$PGDATABASE"
+              else
+                db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
+              fi
+
+              if [ -z "$db_list" ]; then
+                echo "error: no database found or access denied for user '$TARGET_USER'"
+                exit 1
+              fi
+
+              echo "starting database(s) dump to UNIX pipe..."
+              for db in $db_list; do
+                echo "$db" > "$current_db"
+
+                # Dump data to pipe
+                pg_dump -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -d "$db" > "$pipe"
+                dump_exit=$?
+
+                if [ $dump_exit -ne 0 ]; then
+                  echo "error: pg_dump failed with exit code $dump_exit for database '$db'"
+                  exit 1
+                fi
+
+                # Ensure dump is consumed by worker
+                while [ -s "$current_db" ]; do
+                  sleep 1
+                done
+              done
+
+              # "done" is the signal for that Python is waiting in the worker
+              echo "done" > "$current_db"
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+
+      volumes:
+        - name: shared
+          emptyDir: {} # Shared space between all containers
