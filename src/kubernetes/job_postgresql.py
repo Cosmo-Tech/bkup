@@ -27,6 +27,7 @@ class PostgresBackupJob(KubernetesBase):
             "POSTGRES_HOST": kwargs.get("postgres_host", "localhost"),
             "IMAGE_PULL_SECRETS_LIST": kwargs.get("image_pull_secrets", []),
             "original_env_block": kwargs.get("original_env_block", ""),
+            "ORIGINAL_ENV_FROM": kwargs.get("original_env_from", []),
             "AFFINITY_DICT": {
                 "nodeAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": {

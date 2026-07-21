@@ -12,7 +12,6 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      serviceAccountName: clustersnap
       restartPolicy: Never    
       containers:
         # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
@@ -75,7 +74,7 @@ spec:
               pipe='/shared/pg_pipe'
               current_db='/shared/current_db'
 
-              rm -f "$pipe" "$ready_flag" "$current_db"
+              rm -f "$pipe" "$current_db"
 
 
 
@@ -86,7 +85,7 @@ spec:
               # Create UNIX pipe to talk with the worker
               mkfifo "$pipe"
               if [ -p "$pipe" ]; then
-                echo "sucessfully created UNIX pipe at $pipe"
+                echo "successfully created UNIX pipe at $pipe"
               else
                 echo 'error: UNIX pipe not created, cannot get pg binaries'
                 exit 1
@@ -102,8 +101,9 @@ spec:
               TARGET_HOST="${PGHOST:-$POSTGRES_HOST}"
               TARGET_PORT="${PGPORT:-5432}"
 
-              # Password resolution from original environment variables (Bitnami, Official, Custom)
-              export PGPASSWORD="${PGPASSWORD:-${POSTGRES_PASSWORD:-${POSTGRESQL_PASSWORD:-$BITNAMI_POSTGRESQL_PASSWORD}}}"
+              # Password directly injected by Python into PGPASSWORD
+              export PGPASSWORD="${PGPASSWORD}"
+
               TARGET_USER="${PGUSER:-${POSTGRES_USER:-${POSTGRESQL_USERNAME:-postgres}}}"
 
               echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
@@ -113,15 +113,30 @@ spec:
               done
               
 
-              # List all databases
-              db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'")
+              # List databases
+              db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
 
+              # Fallback if query returns empty (e.g. non-superuser connected)
+              if [ -z "$db_list" ]; then
+                target_db="${POSTGRES_DB:-${POSTGRESQL_DATABASE:-$PGDATABASE}}"
+                if [ -n "$target_db" ]; then
+                  db_list="$target_db"
+                else
+                  db_list="$TARGET_USER"
+                fi
+              fi
               echo "starting database(s) dump to UNIX pipe..."
               for db in $db_list; do
                 echo "$db" > "$current_db"
 
                 # Dump data to pipe
                 pg_dump -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -d "$db" > "$pipe"
+                dump_exit=$?
+
+                if [ $dump_exit -ne 0 ]; then
+                  echo "error: pg_dump failed with exit code $dump_exit for database '$db'"
+                  exit 1
+                fi
 
                 # Ensure dump is consumed by worker
                 while [ -s "$current_db" ]; do

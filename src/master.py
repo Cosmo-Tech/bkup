@@ -117,6 +117,62 @@ def get_postgres_pod_ip(kube, namespace: str, pvc_name: str) -> str:
 
     raise RuntimeError(f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{namespace}'")
 
+def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, custom_password_var: str = None) -> list:
+    """Reads secretKeyRef objects from raw_env, decodes Secret values, and explicitly sets PGPASSWORD."""
+    resolved_env = []
+    found_password = None
+
+    for item in raw_env:
+        if not isinstance(item, dict):
+            continue
+
+        name = item.get("name")
+        value = item.get("value")
+        value_from = item.get("valueFrom") or item.get("value_from")
+
+        # Resolve secretKeyRef dynamically
+        if value_from and isinstance(value_from, dict):
+            sec_ref = value_from.get("secretKeyRef") or value_from.get("secret_key_ref")
+            if sec_ref:
+                sec_name = sec_ref.get("name")
+                sec_key = sec_ref.get("key")
+                try:
+                    payload = kube.get_secret_payload(sec_name, namespace)
+                    if sec_key in payload:
+                        value = payload[sec_key]
+                        resolved_env.append({"name": name, "value": value})
+
+                        if (custom_password_var and name == custom_password_var) or ("PASSWORD" in name.upper() or "PASS" in name.upper()):
+                            found_password = value
+                        continue
+                except Exception as e:
+                    print(f"  warn: failed to resolve secretKeyRef for {name} ({e})")
+
+        if value is not None:
+            resolved_env.append({"name": name, "value": value})
+            if (custom_password_var and name == custom_password_var) or ("PASSWORD" in name.upper() or "PASS" in name.upper()):
+                found_password = value
+
+    # Explicitly inject PGPASSWORD if found and not already present
+    if found_password and not any(e.get("name") == "PGPASSWORD" for e in resolved_env):
+        resolved_env.append({"name": "PGPASSWORD", "value": found_password})
+
+    return resolved_env
+
+
+def get_custom_postgres_pass_var_from_map(kube, pvc_name: str, namespace: str) -> str:
+    """Check if backup-map contains a custom postgres-password-env declaration."""
+    try:
+        backup_map = bpm.get_backup_map(kube)
+        for ns in backup_map.get("namespaces", []):
+            if ns.get("name") == namespace:
+                for claim in ns.get("claims", []):
+                    if claim.get("name") == pvc_name:
+                        return claim.get("postgres-password-env")
+    except Exception:
+        pass
+    return None
+
 
 def run_backup_job(cluster_context: str, namespace: str):
     """
@@ -262,14 +318,21 @@ def run_backup_job(cluster_context: str, namespace: str):
                     postgres_image = worker.get_workload_image(info["resource_type"], info["resource_name"])
 
                     original_env_raw = []
+                    original_env_from_raw = []
                     try:
                         if info["resource_type"].lower() == "statefulset":
                             res_obj = kube.apps_v1.read_namespaced_stateful_set(name=info["resource_name"], namespace=namespace)
                         else:
                             res_obj = kube.apps_v1.read_namespaced_deployment(name=info["resource_name"], namespace=namespace)
-                        
-                        if res_obj.spec.template.spec.containers[0].env:
-                            original_env_raw = kube.core_v1.api_client.sanitize_for_serialization(res_obj.spec.template.spec.containers[0].env)
+
+                        c_spec = res_obj.spec.template.spec.containers[0]
+                        if c_spec.env:
+                            raw_env = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env)
+                            custom_pass_var = get_custom_postgres_pass_var_from_map(kube, info["pvc_name"], namespace)
+                            original_env_raw = resolve_and_enrich_postgres_env(kube, namespace, raw_env, custom_pass_var)
+
+                        if c_spec.env_from:
+                            original_env_from_raw = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env_from)
                     except Exception as e:
                         print(f"  warn: failed to extract original env block layout ({e}). Proceeding blank.")
 
@@ -290,7 +353,8 @@ def run_backup_job(cluster_context: str, namespace: str):
                         postgres_host=postgres_host,
                         image_pull_secrets=pull_secrets,
                         suffix=worker.suffix,
-                        original_env_block=original_env_block
+                        original_env_block=original_env_block,
+                        original_env_from=original_env_from_raw
                     )
                 else:
                     print(f"  info: {resource_key} identified as standard volume. Routing via standard worker...")

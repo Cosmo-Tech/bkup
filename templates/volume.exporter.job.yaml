@@ -8,7 +8,6 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      serviceAccountName: clustersnap
       restartPolicy: Never
       affinity:
         nodeAffinity:

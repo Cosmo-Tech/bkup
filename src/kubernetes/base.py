@@ -362,6 +362,12 @@ class KubernetesBase:
             {"operator": "Exists", "effect": "NoExecute"}
         ]
 
+        # Inject original envFrom into database-dumper container if present
+        if replacements.get("ORIGINAL_ENV_FROM"):
+            for container in pod_spec["containers"]:
+                if container.get("name") == "database-dumper":
+                    container["envFrom"] = replacements["ORIGINAL_ENV_FROM"]
+
         # Process container environment variables
         for container in pod_spec["containers"]:
             c_name = container.get("name")
@@ -400,14 +406,13 @@ class KubernetesBase:
                 else:
                     clean_env.append(env_item)
 
-                # Insertion finale des secrets résolus
-                for override_item in final_overrides.values():
-                    clean_env.append(override_item)
+            for override_item in final_overrides.values():
+                clean_env.append(override_item)
 
             if c_name == "database-dumper" and replacements.get("POSTGRES_HOST"):
                 clean_env.append({"name": "POSTGRES_HOST", "value": replacements["POSTGRES_HOST"]})
                 
-                container["env"] = clean_env
+            container["env"] = clean_env
 
         job_name = job_manifest["metadata"]["name"]
 
