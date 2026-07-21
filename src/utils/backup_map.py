@@ -36,11 +36,8 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         
         ns_data = {
             "name": current_ns,
-            "workloads": [],
             "claims": []
         }
-        
-        workload_list = set()
 
         pvc_list = kube.list_pvc()
         if not pvc_list:
@@ -48,40 +45,19 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             map_data["namespaces"].append(ns_data)
             continue
 
-        # Collect workload replicas
-        for pvc in pvc_list:
-            mounts = kube.get_pvc(pvc['name'])
-            if mounts:
-                for m in mounts:
-                    resource_str = m['resource']  # ex: "StatefulSet/postgresql"
-                    if resource_str not in workload_list:
-                        workload_list.add(resource_str)
-                        resource_type, resource_name = resource_str.split('/')
-                        
-                        # Récupération live du nombre de replicas via le wrapper kube
-                        replicas = kube.get_replicas(resource_type, resource_name)
-                        
-                        ns_data["workloads"].append({
-                            "resource": resource_str,
-                            "replicas": replicas
-                        })
-
-        print(f"   workloads:")
-        for wl in ns_data["workloads"]:
-            print(f"    - resource: {wl['resource']}")
-
-
         # Collect PVC
         print(f"   claims:")
         for pvc in pvc_list:
             print(f"    - name: {pvc['name']}")
             
             backup_type = "volume"
+            postgres_mount = None
             mounts = kube.get_pvc(pvc['name'])
             if mounts:
                 for m in mounts:
                     if psql.is_postgresql_workload(m):
                         backup_type = "pg_dump"
+                        postgres_mount = m
                         break
 
             print(f"      backup-type: {backup_type}")
@@ -95,6 +71,14 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                 "attachment-node": node_name,
                 "mounts": []
             }
+
+            # If pg_dump backup type, auto-detect and populate postgresql sub-block
+            if backup_type == "pg_dump" and postgres_mount:
+                pg_cfg = _detect_postgresql_config(kube, current_ns, postgres_mount)
+                pvc_data["postgresql"] = pg_cfg
+                print("      postgresql:")
+                for k, v in pg_cfg.items():
+                    print(f"        {k}: {v}")
 
             if mounts:
                 print(f"      mounts:")
@@ -160,3 +144,52 @@ def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
         print(f"  warn: failed to resolve backup-type from map ({e}). Fallback to 'unknown'.")
         
     return "unknown"
+
+
+def _detect_postgresql_config(kube, namespace: str, mount_info: dict) -> dict:
+    """Inspect workload container environment spec to auto-detect PostgreSQL configuration keys."""
+    pg_config = {
+        "port": 5432
+    }
+
+    try:
+        resource_str = mount_info.get("resource", "")
+        if "/" not in resource_str:
+            return pg_config
+
+        resource_type, resource_name = resource_str.split("/")
+
+        if resource_type.lower() == "statefulset":
+            res_obj = kube.apps_v1.read_namespaced_stateful_set(name=resource_name, namespace=namespace)
+        elif resource_type.lower() == "deployment":
+            res_obj = kube.apps_v1.read_namespaced_deployment(name=resource_name, namespace=namespace)
+        else:
+            return pg_config
+
+        container_name = mount_info.get("container", "").lower()
+        target_container = None
+
+        for c in res_obj.spec.template.spec.containers:
+            if c.name.lower() == container_name or "postgres" in c.name.lower() or "psql" in c.name.lower():
+                target_container = c
+                break
+
+        if not target_container and res_obj.spec.template.spec.containers:
+            target_container = res_obj.spec.template.spec.containers[0]
+
+        if target_container and target_container.env:
+            for env_var in target_container.env:
+                var_name = env_var.name
+                upper_name = var_name.upper()
+
+                if "PASSWORD" in upper_name or "PASS" in upper_name:
+                    pg_config["password-env"] = var_name
+                elif ("USER" in upper_name or "ROLE" in upper_name) and "password" not in upper_name.lower():
+                    pg_config["user-env"] = var_name
+                elif "DB" in upper_name or "DATABASE" in upper_name:
+                    pg_config["db-env"] = var_name
+
+    except Exception as e:
+        print(f"  warn: failed to auto-detect postgresql config for {mount_info.get('resource')}: {e}")
+
+    return pg_config

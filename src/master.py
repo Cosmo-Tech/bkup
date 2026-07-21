@@ -117,10 +117,29 @@ def get_postgres_pod_ip(kube, namespace: str, pvc_name: str) -> str:
 
     raise RuntimeError(f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{namespace}'")
 
-def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, custom_password_var: str = None) -> list:
-    """Reads secretKeyRef objects from raw_env, decodes Secret values, and explicitly sets PGPASSWORD."""
+
+def get_postgresql_claim_config_from_map(kube, pvc_name: str, namespace: str) -> dict:
+    """Read postgresql dict section declared under the PVC claim in backup-map ConfigMap."""
+    try:
+        backup_map = bpm.get_backup_map(kube)
+        for ns in backup_map.get("namespaces", []):
+            if ns.get("name") == namespace:
+                for claim in ns.get("claims", []):
+                    if claim.get("name") == pvc_name:
+                        return claim.get("postgresql", {})
+    except Exception:
+        pass
+    return {}
+
+
+def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, pg_map_config: dict) -> list:
+    """Reads secretKeyRef objects from raw_env, decodes Secret values, and explicitly sets PGPASSWORD & PGUSER."""
     resolved_env = []
     found_password = None
+    found_user = None
+
+    custom_pass_var = pg_map_config.get("password-env")
+    custom_user_var = pg_map_config.get("user-env")
 
     for item in raw_env:
         if not isinstance(item, dict):
@@ -142,36 +161,29 @@ def resolve_and_enrich_postgres_env(kube, namespace: str, raw_env: list, custom_
                         value = payload[sec_key]
                         resolved_env.append({"name": name, "value": value})
 
-                        if (custom_password_var and name == custom_password_var) or ("PASSWORD" in name.upper() or "PASS" in name.upper()):
+                        if (custom_pass_var and name == custom_pass_var) or (not custom_pass_var and ("PASSWORD" in name.upper() or "PASS" in name.upper())):
                             found_password = value
+                        if (custom_user_var and name == custom_user_var) or (not custom_user_var and ("USER" in name.upper() and "PASSWORD" not in name.upper())):
+                            found_user = value
                         continue
                 except Exception as e:
                     print(f"  warn: failed to resolve secretKeyRef for {name} ({e})")
 
         if value is not None:
             resolved_env.append({"name": name, "value": value})
-            if (custom_password_var and name == custom_password_var) or ("PASSWORD" in name.upper() or "PASS" in name.upper()):
+            if (custom_pass_var and name == custom_pass_var) or (not custom_pass_var and ("PASSWORD" in name.upper() or "PASS" in name.upper())):
                 found_password = value
+            if (custom_user_var and name == custom_user_var) or (not custom_user_var and ("USER" in name.upper() and "PASSWORD" not in name.upper())):
+                found_user = value
 
-    # Explicitly inject PGPASSWORD if found and not already present
+    # Explicitly inject PGPASSWORD & PGUSER if found
     if found_password and not any(e.get("name") == "PGPASSWORD" for e in resolved_env):
         resolved_env.append({"name": "PGPASSWORD", "value": found_password})
 
+    if found_user and not any(e.get("name") == "PGUSER" for e in resolved_env):
+        resolved_env.append({"name": "PGUSER", "value": found_user})
+
     return resolved_env
-
-
-def get_custom_postgres_pass_var_from_map(kube, pvc_name: str, namespace: str) -> str:
-    """Check if backup-map contains a custom postgres-password-env declaration."""
-    try:
-        backup_map = bpm.get_backup_map(kube)
-        for ns in backup_map.get("namespaces", []):
-            if ns.get("name") == namespace:
-                for claim in ns.get("claims", []):
-                    if claim.get("name") == pvc_name:
-                        return claim.get("postgres-password-env")
-    except Exception:
-        pass
-    return None
 
 
 def run_backup_job(cluster_context: str, namespace: str):
@@ -317,6 +329,8 @@ def run_backup_job(cluster_context: str, namespace: str):
                     worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
                     postgres_image = worker.get_workload_image(info["resource_type"], info["resource_name"])
 
+                    pg_map_config = get_postgresql_claim_config_from_map(kube, info["pvc_name"], namespace)
+
                     original_env_raw = []
                     original_env_from_raw = []
                     try:
@@ -328,8 +342,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                         c_spec = res_obj.spec.template.spec.containers[0]
                         if c_spec.env:
                             raw_env = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env)
-                            custom_pass_var = get_custom_postgres_pass_var_from_map(kube, info["pvc_name"], namespace)
-                            original_env_raw = resolve_and_enrich_postgres_env(kube, namespace, raw_env, custom_pass_var)
+                            original_env_raw = resolve_and_enrich_postgres_env(kube, namespace, raw_env, pg_map_config)
 
                         if c_spec.env_from:
                             original_env_from_raw = kube.core_v1.api_client.sanitize_for_serialization(c_spec.env_from)
@@ -343,7 +356,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                     else:
                         original_env_block = ""
 
-                    postgres_host = get_postgres_pod_ip(kube, namespace, info["pvc_name"])
+                    postgres_host = pg_map_config.get("host") or get_postgres_pod_ip(kube, namespace, info["pvc_name"])
 
                     worker.create_backup_job(
                         pvc_name=info["pvc_name"],
