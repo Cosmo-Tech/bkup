@@ -151,7 +151,8 @@ clustersnap-backup-map.yaml: |
 
 
 #### Tweaks
-Everything in the backup-map can be tweaked Here is the list of configurable keys:
+Everything in the backup-map can be tweaked. \
+Here is the list of configurable keys:
 
 | key                                       | value           | info
 |-------------------------------------------|-----------------|------

@@ -9,15 +9,15 @@ class KubernetesBase:
     def __init__(self, context: str = None, namespace: str = None):
         """Init Kubernetes connexion, detect if CLI or in-cluster"""
         self.context = context
-        if context:
-            config.load_kube_config(context=context)
-        else:
-            try:
-                config.load_incluster_config()
-            except Exception as e:
-                print(f"error: {e}")
-
         self.namespace = namespace if namespace else "default"
+
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            try:
+                config.load_kube_config(context=context)
+            except Exception as e:
+                print(f"error: failed to load kubeconfig: {e}")
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
