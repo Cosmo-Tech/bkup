@@ -20,6 +20,7 @@ class VolumeBackupJob(KubernetesBase):
             "NAMESPACE": self.namespace,
             "MOUNTED_PATH": mounted_path,
             "PVC_NAME": pvc_name,
+            "master_ns": kwargs.get("master_ns"),
             "IMAGE_PULL_SECRETS_LIST": kwargs.get("image_pull_secrets", []),
             "AFFINITY_DICT": {
                 "nodeAffinity": {

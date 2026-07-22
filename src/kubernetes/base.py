@@ -342,8 +342,7 @@ class KubernetesBase:
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Template path '{template_path}' not found.")
 
-        # Résolution dynamique et centralisée des secrets depuis l'environnement du master pod (default ou in-cluster)
-        master_ns = self.get_current_namespace_from_pod() or "default"
+        master_ns = replacements.get("master_ns") or self.get_current_namespace_from_pod() or "default"
         secret_data = self.get_secret_payload("clustersnap-config", master_ns)
 
         with open(template_path, "r") as f:
