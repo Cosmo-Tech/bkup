@@ -55,9 +55,9 @@
   * `backup-map` ConfigMap
     > Note: this ConfigMap is used to orchestrate the backup. \
     > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it. \
-    > If it already exists, you can read it with `python -m src.master -c KUBECTL_CONTEXT -gm` or `kubectl get cm clustersnap-backup-map`
+    > If it already exists, you can read it with `python -m src.master -c KUBECTL_CONTEXT -bm -g` or `kubectl get cm clustersnap-backup-map`
     ```
-    python -m src.master -c KUBECTL_CONTEXT -rm
+    python -m src.master -c KUBECTL_CONTEXT -bm
     ```
     
 
@@ -94,13 +94,13 @@ python -m src.master --help
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
 
 
-### The `backup-map`
+### ConfigMap `backup-map`
 Clustersnap relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
 
 The `backup-map` is really simple:
-* consists of listing workloads (Deployments/StatefulSets) and their associated PVC if any.
-* must be generated before running Clustersnap jobs.
-* can be manually modified (and it's even recommanded to fit with your needs)
+* consists of listing workloads (Deployments/StatefulSets) and their associated PVC if any
+* must be generated before running Clustersnap jobs
+* can/must be manually modified => The backup-map is pre-gen but some informations are not predictable, any "CHANGEME" values must be replaced
 * stored in namespace of the `Clusternap master pod` (or default namespace if Clustersnap is not running in the cluster)
 
 
@@ -110,19 +110,10 @@ clustersnap-backup-map.yaml: |
   cluster: example
   namespaces:
   - name: namespace1
-    workloads: []
     claims: []
   - name: namespace2
-    workloads: []
     claims: []
   - name: namespace3
-    workloads:
-    - resource: Deployment/workload1
-      replicas: 1
-    - resource: StatefulSet/workload2
-      replicas: 9
-    - resource: StatefulSet/postgresql
-      replicas: 1
     claims:
     - name: pvc-workload1
       backup-type: volume
@@ -147,47 +138,97 @@ clustersnap-backup-map.yaml: |
       - container: postgresql
         path: /data
         resource: StatefulSet/postgresql
+      postgresql:
+        port: 5432
+        user: postgres
+        password-secret:
+          name: postgresql-config
+          key: postgres-password
 ```
 
 
 #### Tweaks
-Everything in the backup-map can be tweaked Here is the list of configurable keys:
+Everything in the backup-map can be tweaked. \
+Here is the list of configurable keys:
 
-| key                                       | value           | info
-|-------------------------------------------|-----------------|------
-| **`claims[]`**                            | *list*          | List of PersistentVolumeClaims (PVCs) to orchestrate within the namespace. If empty = nothing to backup.
-| **`claims[].attachment-node`**            | *string*        | Name of the Kubernetes node where the PVC is attached. Useful if storage is node-constrained.
-| **`claims[].mounts[].path`**              | *string*        | Container mount path where data to back up is located.
-| **`claims[].backup-type`**                | **`volume`**    | The backup job will create a `.tar.gz containing data of the mounted paths` found in the PVC
-| **`claims[].backup-type`**                | **`pg_dump`**   | The backup job will use `pg_dump to create a .sql` dump of all the databases found in the PVC
-| **`claims[].postgresql`**                 | *dictionary*    | Configuration block for PostgreSQL database access.
-| **`claims[].postgresql.host`**            | *string*        | Hardcoded PostgreSQL host/IP *(Overrides `host-env`)*. *Default: Dynamic Pod IP.*
-| **`claims[].postgresql.host-env`**        | *string*        | Name of the workload environment variable containing the host from original database pod.
-| **`claims[].postgresql.port`**            | *integer*       | Hardcoded connection port *(Overrides `port-env`)*. *Default: 5432.*
-| **`claims[].postgresql.port-env`**        | *string*        | Name of the workload environment variable containing the port from original database pod.
-| **`claims[].postgresql.user`**            | *string*        | Hardcoded PostgreSQL username *(Overrides `user-env`)*.
-| **`claims[].postgresql.user-env`**        | *string*        | Name of the workload environment variable containing the user from original database pod.
-| **`claims[].postgresql.password-env`**    | *string*        | **[REQUIRED]** Name of the workload environment variable containing the password (or mounted secret file).
-| **`claims[].postgresql.db`**              | *string*        | Hardcoded target database name *(Overrides `db-env`)*.
-| **`claims[].postgresql.db-env`**          | *string*        | Name of the workload environment variable containing the database name.
+| key                                                   | value           | info
+|-------------------------------------------------------|-----------------|------
+| **`claims[]`**                                        | *list*          | List of PersistentVolumeClaims (PVCs) to orchestrate within the namespace. If empty = nothing to backup.
+| **`claims[].attachment-node`**                        | *string*        | Name of the Kubernetes node where the PVC is attached. Useful if storage is node-constrained.
+| **`claims[].mounts[].path`**                          | *string*        | Container mount path where data to back up is located.
+| **`claims[].backup-type`**                            | **`volume`**    | The backup job will create a `.tar.gz containing data of the mounted paths` found in the PVC.
+| **`claims[].backup-type`**                            | **`pg_dump`**   | The backup job will use `pg_dump to create a .sql` dump of all the databases found in the PVC.
+| **`claims[].postgresql`**                             | *dictionary*    | Configuration block for PostgreSQL database access.
+| **`claims[].postgresql.host`**                        | *string*        | Hardcoded PostgreSQL host/IP. *Default: Dynamic Pod IP.*
+| **`claims[].postgresql.port`**                        | *integer*       | Hardcoded connection port. *Default: 5432.*
+| **`claims[].postgresql.user`**                        | *string*        | Hardcoded PostgreSQL username *(Overrides `user-secret`)*. *Default: postgres.*
+| **`claims[].postgresql.user-secret`**                 | *dictionary*    | Secret reference for username.
+| **`claims[].postgresql.user-secret.name`**            | *string*        | Name of the target Kubernetes Secret.
+| **`claims[].postgresql.user-secret.key`**             | *string*        | Data key inside the Secret holding the username value.
+| **`claims[].postgresql.user-secret.namespace`**       | *string*        | *(Optional)* Target Secret namespace if different from current PVC namespace.
+| **`claims[].postgresql.password-secret`**             | *dictionary*    | **[REQUIRED]** Secret reference for password.
+| **`claims[].postgresql.password-secret.name`**        | *string*        | Name of the target Kubernetes Secret.
+| **`claims[].postgresql.password-secret.key`**         | *string*        | Data key inside the Secret holding the password value.
+| **`claims[].postgresql.password-secret.namespace`**   | *string*        | *(Optional)* Target Secret namespace if different from current PVC namespace.
+| **`claims[].postgresql.db`**                          | *string*        | Hardcoded target database name *(Overrides `db-secret`)*.
+| **`claims[].postgresql.db-secret`**                   | *dictionary*    | Secret reference for database name.
+| **`claims[].postgresql.db-secret.name`**              | *string*        | Name of the target Kubernetes Secret.
+| **`claims[].postgresql.db-secret.key`**               | *string*        | Data key inside the Secret holding the database name value.
+| **`claims[].postgresql.db-secret.namespace`**         | *string*        | *(Optional)* Target Secret namespace if different from current PVC namespace.
 
 > [!CAUTION]
-> **Security Warning:** The plain-text `password` key is **strictly forbidden** inside the `backup-map` to prevent plain-text credential leaks in a ConfigMap. You **must** use `password-env` to reference your workload's environment variable.
+> **Security Note:** Plain-text `password` keys are strictly forbidden in `backup-map`. Always use `password-secret`.
 
 
+
+### ConfigMap `backup-cache`
+The `backup-cache` ConfigMap is an internal state tracker used during backup execution. 
+* It stores the initial replica counts of all scaled-down workloads before the backup starts.
+* If the master script crashes, gets killed, or receives a termination signal (`SIGINT`/`SIGTERM`), it reads this cache during the recovery phase to reliably restore production workloads to their original state.
+* Once the backup and restoration sequence finishes successfully, the cache is automatically purged.
+
+
+### Secret `config`
+The `config` Secret is the core configuration secret required to operate. It must be created prior to running backup operations and contains remote storage credentials and target metadata:
+* `backup-map-namespace`: *(Optional)* The target namespace where `clustersnap-backup-map` and `clustersnap-backup-cache` are stored.
+* `cluster-name`: Name descriptor of the targeted Kubernetes cluster.
+* `storage-address`: Endpoint URL of the remote storage (e.g., `https://<account>.blob.core.windows.net/`).
+* `storage-username`: Storage account username or Access Key.
+* `storage-password`: Storage account password or Secret Access Key.
 ### Workflows
 #### Volumes
+* Run a Kubernetes job to dump content of PVC mount points
 ##### Export
-tofill
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Assessment: 1. Assessment
+    Assessment --> WaitRelease: 2. Scale to 0 & Cache
+    WaitRelease --> BackupJob: 3. Wait PVC Release
+    BackupJob --> StreamUpload: 4. Trigger Backup Job
+    StreamUpload --> Restoration: 5. Tar.gz Stream to Storage
+    Restoration --> [*]: 6. Restore Replicas
+```
 
 ##### Import
 tofill
 
 
 #### PostgreSQL
-* Run a Kubernetes job based on the original PostgreSQL image (to get same version)
+* Run a Kubernetes job based on the original PostgreSQL image (to get same version) to dump databases
 ##### Export
-* Run pg_dump
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Assessment: 1. Assessment
+    Assessment --> SidecarJob: 2. Keep Replicas >0
+    SidecarJob --> UnixPipe: 3. Trigger Dumper+Worker Job
+    UnixPipe --> StreamUpload: 4. pg_dump to FIFO Pipe
+    StreamUpload --> Cleanup: 5. Compress & Upload .sql.gz
+    Cleanup --> [*]: 6. Purge Backup Jobs
+```
 
 ##### Import
 tofill

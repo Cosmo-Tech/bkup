@@ -16,7 +16,21 @@ def get_backup_map(kube, master_ns: str = None) -> dict:
     if not saved_map:
         return {"cluster": kube.get_cluster_name(), "namespaces": []}
 
-    return saved_map
+    if isinstance(saved_map, dict) and "namespaces" in saved_map:
+        return saved_map
+
+    if isinstance(saved_map, dict) and "clustersnap-backup-map.yaml" in saved_map:
+        content = saved_map["clustersnap-backup-map.yaml"]
+        if isinstance(content, dict) and "namespaces" in content:
+            return content
+        try:
+            parsed = yaml.safe_load(content)
+            if isinstance(parsed, dict) and "namespaces" in parsed:
+                return parsed
+        except yaml.YAMLError:
+            pass
+
+    return {"cluster": kube.get_cluster_name(), "namespaces": []}
 
 
 def backup_map_scanner(kube, target_namespaces: list) -> dict:
@@ -26,14 +40,11 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         "namespaces": []
     }
 
-    print(f"cluster: {kube.get_cluster_name()}")
-    print(f"namespaces:")
     original_ns = kube.namespace
     
     for ns in target_namespaces:
         kube.namespace = ns
         current_ns = kube.get_namespace()
-        print(f"- name: {current_ns}")
         
         ns_data = {
             "name": current_ns,
@@ -42,15 +53,11 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
 
         pvc_list = kube.list_pvc()
         if not pvc_list:
-            print(f"   claims: []")
             map_data["namespaces"].append(ns_data)
             continue
 
         # Collect PVC
-        print(f"   claims:")
         for pvc in pvc_list:
-            print(f"    - name: {pvc['name']}")
-            
             backup_type = "volume"
             postgres_mount = None
             mounts = kube.get_pvc(pvc['name'])
@@ -60,11 +67,8 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                         backup_type = "pg_dump"
                         postgres_mount = m
                         break
-
-            print(f"      backup-type: {backup_type}")
             
             node_name = kube.get_node_name(pvc['name'])
-            print(f"      attachment-node: {node_name}")
 
             pvc_data = {
                 "name": pvc['name'],
@@ -77,24 +81,15 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             if backup_type == "pg_dump" and postgres_mount:
                 pg_cfg = _detect_postgresql_config(kube, current_ns, postgres_mount)
                 pvc_data["postgresql"] = pg_cfg
-                print("      postgresql:")
-                for k, v in pg_cfg.items():
-                    print(f"        {k}: {v}")
 
             if mounts:
-                print(f"      mounts:")
                 for m in mounts:
-                    print(f"      - container: {m['container_name']}")
-                    print(f"        path: {m['mount_path']}")
-                    print(f"        resource: {m['resource']}")
-                    
                     pvc_data["mounts"].append({
                         "container": m['container_name'],
                         "path": m['mount_path'],
                         "resource": m['resource']
                     })
             else:
-                print(f"      mounts: {mounts}")
                 pvc_data["mounts"] = mounts
                 
             ns_data["claims"].append(pvc_data)
@@ -156,6 +151,7 @@ def _detect_postgresql_config(kube, namespace: str, mount_info: dict) -> dict:
     try:
         resource_str = mount_info.get("resource", "")
         if "/" not in resource_str:
+            pg_config["password-secret"] = {"name": "CHANGEME", "key": "CHANGEME"}
             return pg_config
 
         resource_type, resource_name = resource_str.split("/")
@@ -165,32 +161,41 @@ def _detect_postgresql_config(kube, namespace: str, mount_info: dict) -> dict:
         elif resource_type.lower() == "deployment":
             res_obj = kube.apps_v1.read_namespaced_deployment(name=resource_name, namespace=namespace)
         else:
+            pg_config["password-secret"] = {"name": "CHANGEME", "key": "CHANGEME"}
             return pg_config
 
-        container_name = mount_info.get("container", "").lower()
-        target_container = None
+        pod_spec = res_obj.spec.template.spec
+        c_spec = pod_spec.containers[0]
 
-        for c in res_obj.spec.template.spec.containers:
-            if c.name.lower() == container_name or "postgres" in c.name.lower() or "psql" in c.name.lower():
-                target_container = c
-                break
+        secret_name = None
 
-        if not target_container and res_obj.spec.template.spec.containers:
-            target_container = res_obj.spec.template.spec.containers[0]
+        # 1. Cherche si une variable d'environnement du conteneur pointe vers un Secret
+        if c_spec.env:
+            for env_var in c_spec.env:
+                if env_var.value_from and env_var.value_from.secret_key_ref:
+                    secret_name = env_var.value_from.secret_key_ref.name
+                    break
 
-        if target_container and target_container.env:
-            for env_var in target_container.env:
-                var_name = env_var.name
-                upper_name = var_name.upper()
+        # 2. Sinon cherche un volume de type Secret
+        if not secret_name and pod_spec.volumes:
+            for vol in pod_spec.volumes:
+                if vol.secret:
+                    secret_name = vol.secret.secret_name
+                    break
 
-                if "PASSWORD" in upper_name or "PASS" in upper_name:
-                    pg_config["password-env"] = var_name
-                elif ("USER" in upper_name or "ROLE" in upper_name) and "password" not in upper_name.lower():
-                    pg_config["user-env"] = var_name
-                elif "DB" in upper_name or "DATABASE" in upper_name:
-                    pg_config["db-env"] = var_name
+        # Si trouvé, on met le nom réel du secret, sinon fallback "CHANGEME"
+        resolved_secret_name = secret_name if secret_name else f"{resource_name}-secret"
+
+        pg_config["password-secret"] = {
+            "name": resolved_secret_name,
+            "key": "CHANGEME"
+        }
 
     except Exception as e:
         print(f"  warn: failed to auto-detect postgresql config for {mount_info.get('resource')}: {e}")
+        pg_config["password-secret"] = {
+            "name": "CHANGEME",
+            "key": "CHANGEME"
+        }
 
     return pg_config

@@ -9,15 +9,15 @@ class KubernetesBase:
     def __init__(self, context: str = None, namespace: str = None):
         """Init Kubernetes connexion, detect if CLI or in-cluster"""
         self.context = context
-        if context:
-            config.load_kube_config(context=context)
-        else:
-            try:
-                config.load_incluster_config()
-            except Exception as e:
-                print(f"error: {e}")
-
         self.namespace = namespace if namespace else "default"
+
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            try:
+                config.load_kube_config(context=context)
+            except Exception as e:
+                print(f"error: failed to load kubeconfig: {e}")
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
@@ -342,8 +342,7 @@ class KubernetesBase:
         if not os.path.exists(template_path):
             raise FileNotFoundError(f"Template path '{template_path}' not found.")
 
-        # Résolution dynamique et centralisée des secrets depuis l'environnement du master pod (default ou in-cluster)
-        master_ns = self.get_current_namespace_from_pod() or "default"
+        master_ns = replacements.get("master_ns") or self.get_current_namespace_from_pod() or "default"
         secret_data = self.get_secret_payload("clustersnap-config", master_ns)
 
         with open(template_path, "r") as f:

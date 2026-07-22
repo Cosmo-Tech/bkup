@@ -15,20 +15,20 @@ backup_workloads = {}
 kube_client_sigkill = None
 
 
-def get_master_namespace(kube_client) -> str:
-    """Get namespace of master pod"""
-    pod_ns = kube_client.get_current_namespace_from_pod()
-    if pod_ns:
-        return pod_ns
+def get_secret_config_namespace(kube_client) -> str:
+    """Find the namespace containing the 'clustersnap-config' Secret."""
+    for ns in kube_client.list_namespaces():
+        try:
+            if kube_client.get_secret_payload("clustersnap-config", namespace=ns):
+                return ns
+        except Exception:
+            continue
 
-    return "default"
+    raise RuntimeError("Error: Secret 'clustersnap-config' not found in any namespace.")
 
 
 def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
-    """
-    Fonction centrale de restauration d'urgence.
-    Garantit le retour à l'état initial peu importe l'origine de l'arrêt (Crash ou Signal).
-    """
+    """Restore scaled down replicas to their original quantity"""
     # Récupération sécurisée du cache via bpc en cas de perte de la mémoire vive
     orig_ns = kube_client.namespace
     try:
@@ -90,7 +90,7 @@ def restore_production_on_signal(signum, frame):
         print("info: no kubernetes client available. exiting.")
         sys.exit(1)
 
-    master_ns = get_master_namespace(kube_client_sigkill)
+    master_ns = get_secret_config_namespace(kube_client_sigkill)
     restore_workloads_from_state(kube_client_sigkill, master_ns, backup_workloads)
 
     print("info: rollback finished. exiting.")
@@ -118,7 +118,7 @@ def run_backup_job(cluster_context: str, namespace: str):
     if not pvcs:
         return
 
-    master_ns = get_master_namespace(kube)
+    master_ns = get_secret_config_namespace(kube)
 
     print(f"\n==================================================")
     print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
@@ -146,7 +146,7 @@ def run_backup_job(cluster_context: str, namespace: str):
     finally:
         kube.namespace = orig_namespace
 
-    # Utilisation du try...finally global pour intercepter TOUS les crashs Python inattendus (ex: YAML ParseError)
+    # du try...finally to catch all Python crashes => To be able restore scaled down replicas
     try:
         # ==================================================
         # PHASE 1 : WORKLOAD ASSESSMENT AND SCALE DOWN
@@ -178,12 +178,14 @@ def run_backup_job(cluster_context: str, namespace: str):
                     node_name = ""
 
                 cached_val = bpc.find_cached_replicas(cache_data, namespace, resource_type, resource_name)
-                if cached_val is not None:
+                real_replicas = kube.get_replicas(resource_type, resource_name)
+
+                if cached_val is not None and cached_val > 0:
                     initial_replicas = cached_val
                     print(f"  info: Found cached replica count for {resource_key}: {initial_replicas}")
                 else:
-                    initial_replicas = kube.get_replicas(resource_type, resource_name)
-                    if should_scale:
+                    initial_replicas = real_replicas
+                    if should_scale and initial_replicas > 0:
                         bpc.update_cached_replicas(cache_data, namespace, resource_type, resource_name, initial_replicas)
 
                 backup_workloads[resource_key] = {
@@ -191,6 +193,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                     "resource_type": resource_type,
                     "resource_name": resource_name,
                     "initial_replicas": initial_replicas,
+                    "current_real_replicas": real_replicas,
                     "pvc_name": pvc_name,
                     "mounted_path": mounted_path,
                     "node_name": node_name,
@@ -203,7 +206,7 @@ def run_backup_job(cluster_context: str, namespace: str):
         # Scale down workloads
         for resource_key, info in backup_workloads.items():
             if info["should_scale"]:
-                if info["initial_replicas"] > 0:
+                if info["initial_replicas"] > 0 or info["current_real_replicas"] > 0:
                     kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=0)
                 else:
                     print(f"  info: {resource_key} is already stopped.")
@@ -216,7 +219,7 @@ def run_backup_job(cluster_context: str, namespace: str):
         # ==================================================
         print("\nPHASE 2: Waiting for scaled-down workloads to stop...")
         for resource_key, info in backup_workloads.items():
-            if info["namespace"] == namespace and info["should_scale"] and info["initial_replicas"] > 0:
+            if info["namespace"] == namespace and info["should_scale"] and (info["initial_replicas"] > 0 or info["current_real_replicas"] > 0):
                 kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
 
         print("\nensure PVC are not attached anymore...")
@@ -258,6 +261,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                         mounted_path=info["mounted_path"],
                         node_name=info["node_name"],
                         image_pull_secrets=pull_secrets,
+                        master_ns=master_ns,
                         suffix=worker.suffix
                     )
 
@@ -293,12 +297,24 @@ def main():
     # SIGTERM = Kubernetes Pod killed
     signal.signal(signal.SIGTERM, restore_production_on_signal)
 
-    parser = argparse.ArgumentParser(description="Backup Kubernetes volumes")
-    parser.add_argument("-c", "--context", type=str, default=None, help="Local kubectl context")
-    parser.add_argument("-n", "--namespace", type=str, default=None, help="Kubernetes namespace (comma-separated or 'all')")
-    parser.add_argument("-j", "--job", action="store_true", help="Run a backup job")
-    parser.add_argument("-gm", "--get-map", action="store_true", help="Display backup-map")
-    parser.add_argument("-rm", "--refresh-map", action="store_true", help="Refresh data in the backup-map ConfigMap (must be runned when all PVC workload are up)")
+    parser = argparse.ArgumentParser(
+        description="Backup Kubernetes volumes",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80)
+    )
+
+    # Global options
+    global_group = parser.add_argument_group("global")
+    global_group.add_argument("-c", "--context", type=str, metavar="CT", default=None, help="Local kubectl context")
+    global_group.add_argument("-n", "--namespace", type=str, metavar="NS", default=None, help="Target a namespace for backup job run")
+    global_group.add_argument("-j", "--job", action="store_true", help="Run backup job(s) based on current backup-map")
+    global_group.add_argument("-bm", "--backup-map", action="store_true", help="Manage backup-map configuration")
+
+    # Backup-map sub-options
+    map_group = parser.add_argument_group("backup-map")
+    map_group.add_argument("-p", "--preview", action="store_true", help="Preview new backup-map")
+    map_group.add_argument("-a", "--apply", action="store_true", help="Apply new backup-map")
+    map_group.add_argument("-g", "--get-current", action="store_true", help="Get current saved backup-map")
+
     args = parser.parse_args()
 
     cluster_name_env = os.getenv("CLUSTER_NAME")
@@ -307,38 +323,76 @@ def main():
     cluster_context = cluster_name_env if cluster_name_env else args.context
     namespace_input = namespace_env if namespace_env else args.namespace
 
-    kube = VolumeBackupJob(context=cluster_context, namespace=namespace_input if namespace_input and namespace_input.lower() != "all" else "default")
+    kube = VolumeBackupJob(context=cluster_context, namespace="default")
     kube_client_sigkill = kube
 
-    # Targetted namespace
-    if namespace_input and namespace_input.lower() != "all":
-        target_namespaces = [ns.strip() for ns in namespace_input.split(",")]
+    # Validation d'utilisation stricte des sous-options de -bm
+    if (args.apply or args.preview or args.get_current) and not args.backup_map:
+        print("error: --preview (-p), --apply (-a), and --get-current (-g) can only be used with --backup-map (-bm).")
+        sys.exit(1)
 
-    # Cluster-wide
-    else:
-        target_namespaces = kube.list_namespaces()
-
+    master_ns = get_secret_config_namespace(kube)
 
     if args.job:
-        bpm.get_backup_map(kube)
+        kube.namespace = master_ns
+        try:
+            bpm.get_backup_map(kube, master_ns=master_ns)
+        except Exception as e:
+            print(f"error: could not retrieve 'clustersnap-backup-map' ConfigMap in namespace '{master_ns}': {e}")
+            print("hint: generate and apply one first using 'python -m src.master -bm -a'")
+            sys.exit(1)
+
+        # Si un namespace unique est visé via -n, on n'exécute que celui-ci
+        if namespace_input:
+            target_namespaces = [namespace_input.strip()]
+        else:
+            target_namespaces = kube.list_namespaces()
+
         for ns in target_namespaces:
             kube.namespace = ns
             run_backup_job(cluster_context, namespace=ns)
 
-    elif args.refresh_map:
-        backup_map = bpm.backup_map_scanner(kube, target_namespaces)
-        kube.save_to_configmap(
-            name="clustersnap-backup-map",
-            namespace=get_master_namespace(kube),
-            data=backup_map
-        )
+    elif args.backup_map:
+        # Incompatibilité : -g ne se combine pas avec -p ou -a
+        if args.get_current and (args.preview or args.apply):
+            print("error: --get-current (-g) cannot be combined with scanning options (-p or -a).")
+            sys.exit(1)
 
-    elif args.get_map:
-        backup_map = bpm.get_backup_map(kube)
-        print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))
+        # 1. ACTION : Lire la map existante dans K8s (-g)
+        if args.get_current:
+            try:
+                saved_map = bpm.get_backup_map(kube, master_ns=master_ns)
+                print(yaml.dump(saved_map, sort_keys=False, default_flow_style=False))
+            except Exception as e:
+                print(f"error: failed to retrieve backup-map from namespace '{master_ns}': {e}")
+                sys.exit(1)
+
+        # 2. ACTION : Scanner TOUT le cluster (-p / -a)
+        elif args.preview or args.apply:
+            all_cluster_namespaces = kube.list_namespaces()
+            backup_map = bpm.backup_map_scanner(kube, all_cluster_namespaces)
+
+            if args.apply:
+                kube.save_to_configmap(
+                    name="clustersnap-backup-map",
+                    namespace=master_ns,
+                    data=backup_map
+                )
+                print(f"info: backup-map successfully applied and saved to ConfigMap in namespace '{master_ns}'.")
+            else:
+                print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))
+
+        # 3. ACTION : -bm tout seul -> Message d'erreur
+        else:
+            print("error: --backup-map (-bm) requires an action option (-g/--get-current, -p/--preview, or -a/--apply).")
+            print("examples:")
+            print("  python -m src.master -bm -g        # Read saved backup-map from Kubernetes")
+            print("  python -m src.master -bm -p        # Preview full cluster backup-map")
+            print("  python -m src.master -bm -a        # Scan cluster and save backup-map to ConfigMap")
+            sys.exit(1)
 
     else:
-        print('error: please --help for more info')
+        print('error: please use --help for usage instructions')
 
 
 if __name__ == "__main__":
