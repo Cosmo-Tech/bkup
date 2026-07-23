@@ -21,7 +21,7 @@ def is_postgresql_workload(mount_info: dict) -> bool:
 def get_superuser_name():
     """Dynamically discover the bootstrap superuser name via local network loopback"""
     # Query the sidecar database engine listening on localhost
-    command = "psql -h 127.0.0.1 -t -A -c \"SELECT rolname FROM pg_roles WHERE rolsuper = true ORDER BY oid LIMIT 1;\""
+    command = 'psql -h 127.0.0.1 -t -A -c "SELECT rolname FROM pg_roles WHERE rolsuper = true ORDER BY oid LIMIT 1;"'
 
     process = subprocess.Popen(shlex.split(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
@@ -42,7 +42,7 @@ def get_all_databases(superuser):
     if process.returncode != 0:
         raise Exception(f"Failed to list databases: {stderr.decode()}")
 
-    return [db.strip() for db in stdout.decode().split('\n') if db.strip()]
+    return [db.strip() for db in stdout.decode().split("\n") if db.strip()]
 
 
 def stream_individual_dumps(storage_provider, pvc_name):
@@ -63,9 +63,7 @@ def stream_individual_dumps(storage_provider, pvc_name):
             process = subprocess.Popen(shlex.split(dump_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             success = storage_provider.upload_stream(
-                pvc_name=f"{pvc_name}-{db}",
-                path=f"/{db}.dump",
-                data_generator=process.stdout
+                pvc_name=f"{pvc_name}-{db}", path=f"/{db}.dump", data_generator=process.stdout
             )
 
             if not success:

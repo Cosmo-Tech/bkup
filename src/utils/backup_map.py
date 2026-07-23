@@ -6,10 +6,7 @@ import src.utils.psql as psql
 def get_backup_map(kube, master_ns: str = None) -> dict:
     """Get existing ConfigMap of the backup-map."""
     target_ns = master_ns if master_ns else kube.get_namespace()
-    saved_map = kube.get_configmap(
-        name="clustersnap-backup-map",
-        namespace=target_ns
-    )
+    saved_map = kube.get_configmap(name="clustersnap-backup-map", namespace=target_ns)
 
     if not saved_map:
         return {"cluster": kube.get_cluster_name(), "namespaces": []}
@@ -33,10 +30,7 @@ def get_backup_map(kube, master_ns: str = None) -> dict:
 
 def backup_map_scanner(kube, target_namespaces: list) -> dict:
     """Scan the cluster to get a YAML map to orchestrate the backups."""
-    map_data = {
-        "cluster": kube.get_cluster_name(),
-        "namespaces": []
-    }
+    map_data = {"cluster": kube.get_cluster_name(), "namespaces": []}
 
     original_ns = kube.namespace
 
@@ -44,10 +38,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         kube.namespace = ns
         current_ns = kube.get_namespace()
 
-        ns_data = {
-            "name": current_ns,
-            "claims": []
-        }
+        ns_data = {"name": current_ns, "claims": []}
 
         pvc_list = kube.list_pvc()
         if not pvc_list:
@@ -58,7 +49,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
         for pvc in pvc_list:
             backup_type = "volume"
             postgres_mount = None
-            mounts = kube.get_pvc(pvc['name'])
+            mounts = kube.get_pvc(pvc["name"])
             if mounts:
                 for m in mounts:
                     if psql.is_postgresql_workload(m):
@@ -66,14 +57,9 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                         postgres_mount = m
                         break
 
-            node_name = kube.get_node_name(pvc['name'])
+            node_name = kube.get_node_name(pvc["name"])
 
-            pvc_data = {
-                "name": pvc['name'],
-                "backup-type": backup_type,
-                "attachment-node": node_name,
-                "mounts": []
-            }
+            pvc_data = {"name": pvc["name"], "backup-type": backup_type, "attachment-node": node_name, "mounts": []}
 
             # If pg_dump backup type, auto-detect and populate postgresql sub-block
             if backup_type == "pg_dump" and postgres_mount:
@@ -82,11 +68,9 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
 
             if mounts:
                 for m in mounts:
-                    pvc_data["mounts"].append({
-                        "container": m['container_name'],
-                        "path": m['mount_path'],
-                        "resource": m['resource']
-                    })
+                    pvc_data["mounts"].append(
+                        {"container": m["container_name"], "path": m["mount_path"], "resource": m["resource"]}
+                    )
             else:
                 pvc_data["mounts"] = mounts
 
@@ -120,7 +104,7 @@ def get_pvc_from_map(kube_client, pvc_name: str) -> list:
 
 
 def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
-    """Interroge la ConfigMap de backup-map pour récupérer automatiquement la stratégie du PVC."""
+    """Queries the backup-map ConfigMap to automatically retrieve the PVC strategy."""
     try:
         backup_map = get_backup_map(kube)
 
@@ -142,9 +126,7 @@ def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
 
 def _detect_postgresql_config(kube, namespace: str, mount_info: dict) -> dict:
     """Inspect workload container environment spec to auto-detect PostgreSQL configuration keys."""
-    pg_config = {
-        "port": 5432
-    }
+    pg_config = {"port": 5432}
 
     try:
         resource_str = mount_info.get("resource", "")
@@ -167,33 +149,27 @@ def _detect_postgresql_config(kube, namespace: str, mount_info: dict) -> dict:
 
         secret_name = None
 
-        # 1. Cherche si une variable d'environnement du conteneur pointe vers un Secret
+        # 1. Check if a container environment variable points to a Secret
         if c_spec.env:
             for env_var in c_spec.env:
                 if env_var.value_from and env_var.value_from.secret_key_ref:
                     secret_name = env_var.value_from.secret_key_ref.name
                     break
 
-        # 2. Sinon cherche un volume de type Secret
+        # 2. Otherwise, look for a Secret volume
         if not secret_name and pod_spec.volumes:
             for vol in pod_spec.volumes:
                 if vol.secret:
                     secret_name = vol.secret.secret_name
                     break
 
-        # Si trouvé, on met le nom réel du secret, sinon fallback "CHANGEME"
+        # If found, set the real secret name, otherwise fallback to "CHANGEME"
         resolved_secret_name = secret_name if secret_name else f"{resource_name}-secret"
 
-        pg_config["password-secret"] = {
-            "name": resolved_secret_name,
-            "key": "CHANGEME"
-        }
+        pg_config["password-secret"] = {"name": resolved_secret_name, "key": "CHANGEME"}
 
     except Exception as e:
         print(f"  warn: failed to auto-detect postgresql config for {mount_info.get('resource')}: {e}")
-        pg_config["password-secret"] = {
-            "name": "CHANGEME",
-            "key": "CHANGEME"
-        }
+        pg_config["password-secret"] = {"name": "CHANGEME", "key": "CHANGEME"}
 
     return pg_config

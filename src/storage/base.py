@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class Storage(ABC):
     """Abstract class defining the contract for all storage providers."""
 

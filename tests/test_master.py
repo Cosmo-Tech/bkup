@@ -7,7 +7,7 @@ def test_get_secret_config_namespace_found():
     mock_kube = MagicMock()
     mock_kube.list_namespaces.return_value = ["default", "kube-system", "clustersnap-system"]
 
-    # Simule que le secret n'est pas dans les deux premiers namespaces, mais dans le 3ème
+    # Simulate that the secret is not in the first two namespaces, but in the 3rd
     def mock_get_secret(name, namespace):
         if namespace == "clustersnap-system":
             return {"storage-address": "mock"}
@@ -22,7 +22,7 @@ def test_get_secret_config_namespace_found():
 def test_get_secret_config_namespace_not_found():
     mock_kube = MagicMock()
     mock_kube.list_namespaces.return_value = ["default", "kube-system"]
-    # Simule l'absence du secret partout
+    # Simulate the absence of the secret everywhere
     mock_kube.get_secret_payload.side_effect = Exception("Not found")
 
     with pytest.raises(RuntimeError, match="Secret 'clustersnap-config' not found"):

@@ -3,19 +3,16 @@ import yaml
 
 def get_backup_cache(kube) -> dict:
     """Get the existing ConfigMap of the backup-cache."""
-    saved_cache = kube.get_configmap(
-        name="clustersnap-backup-cache",
-        namespace=kube.get_namespace()
-    )
+    saved_cache = kube.get_configmap(name="clustersnap-backup-cache", namespace=kube.get_namespace())
 
     if not saved_cache:
         return {"namespaces": []}
 
-    # Si get_configmap a déjà détecté et parsé le YAML sous forme de dictionnaire Python
+    # If get_configmap has already detected and parsed the YAML as a Python dictionary
     if isinstance(saved_cache, dict) and "namespaces" in saved_cache:
         return saved_cache
 
-    # Si get_configmap a renvoyé le dictionnaire global de la ConfigMap avec sa clé fichier
+    # If get_configmap returned the global ConfigMap dictionary with its file key
     if isinstance(saved_cache, dict) and "clustersnap-backup-cache.yaml" in saved_cache:
         content = saved_cache["clustersnap-backup-cache.yaml"]
         if isinstance(content, dict) and "namespaces" in content:
@@ -38,7 +35,7 @@ def save_backup_cache(kube, cache_data: dict, master_namespace: str):
         kube.save_to_configmap(
             name="clustersnap-backup-cache",
             namespace=master_namespace,
-            data={"clustersnap-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)}
+            data={"clustersnap-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)},
         )
     finally:
         kube.namespace = orig_ns
@@ -49,11 +46,7 @@ def clear_backup_cache(kube, master_namespace: str):
     orig_ns = kube.namespace
     try:
         kube.namespace = master_namespace
-        kube.save_to_configmap(
-            name="clustersnap-backup-cache",
-            namespace=master_namespace,
-            data={}
-        )
+        kube.save_to_configmap(name="clustersnap-backup-cache", namespace=master_namespace, data={})
     except Exception as e:
         print(f"  warn: failed to clear backup cache ConfigMap: {e}")
     finally:
@@ -94,11 +87,7 @@ def update_cached_replicas(cache_data: dict, namespace: str, r_type: str, r_name
             break
 
     if not res_found:
-        resources.append({
-            "type": r_type,
-            "name": r_name,
-            "replicas": replicas
-        })
+        resources.append({"type": r_type, "name": r_name, "replicas": replicas})
     else:
         res_found["replicas"] = replicas
 

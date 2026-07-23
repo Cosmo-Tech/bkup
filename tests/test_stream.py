@@ -2,22 +2,23 @@ import io
 import gzip
 from src.utils.stream import GzipStreamer
 
+
 def test_gzip_streamer():
-    # Génération de données factices
+    # Fake data generation
     raw_data = b"Hello Kubernetes Backup! " * 1000
     source_stream = io.BytesIO(raw_data)
 
-    # Instanciation de notre streamer avec une petite taille de chunk pour forcer l'itération
+    # Instantiate our streamer with a small chunk size to force iteration
     streamer = GzipStreamer(source_stream, chunk_size=512)
 
-    # Collecte des chunks compressés
+    # Collect compressed chunks
     compressed_chunks = list(streamer)
     compressed_data = b"".join(compressed_chunks)
 
-    # Vérifications de base
+    # Basic verifications
     assert len(compressed_data) > 0
     assert compressed_data != raw_data
 
-    # Test critique : la décompression du flux généré redonne-t-elle la donnée initiale ?
+    # Critical test: does decompressing the generated stream yield the initial data?
     decompressed_data = gzip.decompress(compressed_data)
     assert decompressed_data == raw_data
