@@ -1,3 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bkup"
+version = "0.0.0"
+description = "Cloud-Agnostic Kubernetes Backup Tool"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "kubernetes",
+    "azure-identity",
+    "azure-storage-blob",
+    "pydantic",
+    "psutil",
+    "PyYAML",
+]
+
 [tool.ruff]
 line-length = 120
 exclude = [

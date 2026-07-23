@@ -1,5 +1,5 @@
 name: Build and push Docker image
-run-name: "[image] branch=${{ github.ref_name }} - ${{ github.event.head_commit.message }}"
+run-name: "[docker] branch=${{ github.ref_name }} - ${{ github.event.head_commit.message }}"
 
 on:
   release:
