@@ -84,25 +84,33 @@ class KubernetesBase:
             print(f"error: failed to scan workload mounts for PVC '{pvc_name}': {e}")
         return targets
 
-    def get_pod_ip(self, pvc_name: str) -> str:
-        """Find the exact IP of the running Pod mounted on the target PVC."""
-        try:
-            pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
-            for pod in pods.items:
-                if pod.status.phase != "Running":
-                    continue
+    def get_pod_ip(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> str:
+        """Find the exact IP of the running Pod mounted on the target PVC (waits if starting up)."""
+        print(f"  info: resolving active Pod IP for PVC '{pvc_name}'...")
+        start_time = time.time()
 
-                if pod.spec.volumes:
-                    for vol in pod.spec.volumes:
-                        if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                            if pod.status.pod_ip:
-                                print(f"  info: detected active Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}")
-                                return pod.status.pod_ip
-        except Exception as e:
-            print(f"  warn: failed to resolve active pod IP for PVC '{pvc_name}': {e}")
+        while time.time() - start_time < timeout:
+            try:
+                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+                for pod in pods.items:
+                    if pod.status.phase != "Running":
+                        continue
+
+                    if pod.spec.volumes:
+                        for vol in pod.spec.volumes:
+                            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                                if pod.status.pod_ip:
+                                    print(
+                                        f"  info: detected active Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}"
+                                    )
+                                    return pod.status.pod_ip
+            except Exception as e:
+                print(f"  warn: error resolving pod IP for PVC '{pvc_name}' ({e}), retrying...")
+
+            time.sleep(check_interval)
 
         raise RuntimeError(
-            f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}'"
+            f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}' within {timeout}s"
         )
 
     def get_image_pull_secrets(self, resource_type: str, resource_name: str) -> list:
@@ -174,7 +182,7 @@ class KubernetesBase:
                 if selected_node:
                     return selected_node
 
-            # 3. Fallback on PV affinity (Local volumes, blocs dédiés)
+            # 3. Fallback on PV affinity (Local volumes, dedicated blocks)
             try:
                 pv = self.core_v1.read_persistent_volume(name=pv_name)
                 if pv.spec.node_affinity and pv.spec.node_affinity.required:
@@ -185,7 +193,7 @@ class KubernetesBase:
             except Exception:
                 pass
 
-            # 4. In the end, if node name cannot be retrieve, just return empty str
+            # 4. If node name cannot be retrieved, return empty string
             return ""
         except Exception as e:
             print(f"  error: failed to resolve node attachment for PVC '{pvc_name}': {e}")
