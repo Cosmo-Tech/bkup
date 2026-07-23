@@ -28,7 +28,6 @@ def get_secret_config_namespace(kube_client) -> str:
 
 def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
     """Restore scaled down replicas to their original quantity"""
-    # Secure cache retrieval via bpc in case of RAM loss
     orig_ns = kube_client.namespace
     try:
         kube_client.namespace = master_ns
@@ -40,7 +39,7 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
 
     cache_namespaces = cache_data.get("namespaces", [])
 
-    # 1. Deletion of residual backup jobs to clean the cluster
+    # Delete residual backup jobs
     supported_workers = [VolumeBackupJob, PostgresBackupJob]
     for resource_key, info in backup_workloads_map.items():
         for worker_cls in supported_workers:
@@ -50,19 +49,18 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
             except Exception:
                 pass
 
-    # 2. Replicas restoration
+    # Restore workload replicas from in-memory assessment
     if backup_workloads_map:
         for resource_key, info in backup_workloads_map.items():
             kube_client.namespace = info["namespace"]
             current_replicas = kube_client.get_replicas(info["resource_type"], info["resource_name"])
 
             if current_replicas != info["initial_replicas"]:
-                print(
-                    f"  info: [RESTORE] restoring {resource_key} from {current_replicas} to {info['initial_replicas']} replicas..."
-                )
+                print(f"  info: [RESTORE] restoring {resource_key} from {current_replicas} to {info['initial_replicas']} replicas...")
                 kube_client.scale_replicas(
                     info["resource_type"], info["resource_name"], replicas=info["initial_replicas"]
                 )
+    # Fallback restoration using persisted backup cache ConfigMap
     elif cache_namespaces:
         for ns_item in cache_namespaces:
             ns_name = ns_item.get("name")
@@ -75,19 +73,17 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
                 current_replicas = kube_client.get_replicas(r_type, r_name)
                 if current_replicas != initial_replicas:
                     try:
-                        print(
-                            f"  info: [RESTORE CACHE] restoring {r_type}/{r_name} in namespace {ns_name} from {current_replicas} to {initial_replicas} replicas..."
-                        )
+                        print(f"  info: [RESTORE CACHE] restoring {r_type}/{r_name} in namespace {ns_name} from {current_replicas} to {initial_replicas} replicas...")
                         kube_client.scale_replicas(r_type, r_name, replicas=initial_replicas)
                     except Exception as e:
                         print(f"  error: failed to restore {r_type}/{r_name} from cache data: {e}")
 
-    # 3. Final purge of the technical cache ConfigMap
+    # Purge technical cache ConfigMap
     bpc.clear_backup_cache(kube_client, master_ns)
 
 
 def restore_production_on_signal(signum, frame):
-    """Rollback scaled down replicas in case of interruption signal"""
+    """Rollback scaled down replicas in case of interruption signal."""
     print(f"\nwarn: termination signal ({signum}) received! rollbacking replicas...")
 
     if not kube_client_sigkill:
@@ -128,12 +124,16 @@ def run_backup_job(cluster_context: str, namespace: str):
     print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
     print("==================================================")
 
+
+    # ==================================================
+    # PHASE 0 : CLEANUP OLD JOBS
+    # ==================================================
     print("\nPHASE 0: Cleaning existing backups jobs...")
     pvc_list = []
 
     supported_workers = [VolumeBackupJob, PostgresBackupJob]
     for pvc in pvcs:
-        pvc_name = pvc["name"]
+        pvc_name = pvc['name']
         pvc_list.append(pvc_name)
         for worker_cls in supported_workers:
             kube.delete_backup_job(pvc_name=pvc_name, suffix=worker_cls.suffix)
@@ -157,7 +157,7 @@ def run_backup_job(cluster_context: str, namespace: str):
         # ==================================================
         print("\nPHASE 1: Capturing states and scaling down workloads...")
         for pvc in pvcs:
-            pvc_name = pvc["name"]
+            pvc_name = pvc['name']
             targets = kube.get_pvc(pvc_name)
             if not targets:
                 print(f"  warn: No active workload config found for {pvc_name}. Skipping.")
@@ -165,12 +165,12 @@ def run_backup_job(cluster_context: str, namespace: str):
 
             target = targets[0]
             resource_key = f"{namespace}/{target['resource']}"
-            resource_type, resource_name = target["resource"].split("/")
-            mounted_path = target["mount_path"]
+            resource_type, resource_name = target['resource'].split('/')
+            mounted_path = target['mount_path']
 
             mount_info = {"container": resource_name, "resource": resource_type}
             is_postgres = psql.is_postgresql_workload(mount_info)
-            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads in Phase 1
+            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads because it will be used to run pg_dump
 
             if resource_key not in backup_workloads:
                 if should_scale and kube.is_topology_constrained(pvc_name):
@@ -187,9 +187,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                 else:
                     initial_replicas = real_replicas
                     if should_scale and initial_replicas > 0:
-                        bpc.update_cached_replicas(
-                            cache_data, namespace, resource_type, resource_name, initial_replicas
-                        )
+                        bpc.update_cached_replicas(cache_data, namespace, resource_type, resource_name, initial_replicas)
 
                 backup_workloads[resource_key] = {
                     "namespace": namespace,
@@ -201,7 +199,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                     "mounted_path": mounted_path,
                     "node_name": node_name,
                     "should_scale": should_scale,
-                    "is_postgres": is_postgres,
+                    "is_postgres": is_postgres
                 }
 
         bpc.save_backup_cache(kube, cache_data, master_ns)
@@ -214,20 +212,14 @@ def run_backup_job(cluster_context: str, namespace: str):
                 else:
                     print(f"  info: {resource_key} is already stopped.")
             else:
-                print(
-                    f"  info: {resource_key} is PostgreSQL — leaving replicas untouched ({info['initial_replicas']}) for now."
-                )
+                print(f"  info: {resource_key} is PostgreSQL — leaving replicas untouched ({info['initial_replicas']}) for now.")
 
         # ==================================================
         # PHASE 2 : WAIT FOR COMPLETE EXCLUSIVITY
         # ==================================================
         print("\nPHASE 2: Waiting for scaled-down workloads to stop...")
         for resource_key, info in backup_workloads.items():
-            if (
-                info["namespace"] == namespace
-                and info["should_scale"]
-                and (info["initial_replicas"] > 0 or info["current_real_replicas"] > 0)
-            ):
+            if info["namespace"] == namespace and info["should_scale"] and (info["initial_replicas"] > 0 or info["current_real_replicas"] > 0):
                 kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
 
         print("\nensure PVC are not attached anymore...")
@@ -250,10 +242,13 @@ def run_backup_job(cluster_context: str, namespace: str):
 
                     current_replicas = kube.get_replicas(info["resource_type"], info["resource_name"])
                     if current_replicas == 0:
-                        print(
-                            f"  info: {resource_key} is currently stopped (0 replicas). Scaling UP to 1 for pg_dump..."
-                        )
-                        kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=1)
+                        # If stopped initially (e.g. night schedule), scale to 1. If cached > 0, restore that count.
+                        target_count = info["initial_replicas"] if info["initial_replicas"] > 0 else 1
+                        
+                        print(f"  info: {resource_key} is currently stopped (0 replicas). Scaling UP to {target_count} for pg_dump...")
+                        kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=target_count)
+                        kube.wait_for_scale_up(info["resource_type"], info["resource_name"], target_replicas=target_count)
+
                     worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
                     target_ip = kube.get_pod_ip(info["pvc_name"])
 
@@ -266,7 +261,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                         target_ip=target_ip,
                         image_pull_secrets=pull_secrets,
                         master_ns=master_ns,
-                        suffix=worker.suffix,
+                        suffix=worker.suffix
                     )
                 else:
                     print(f"  info: {resource_key} identified as standard volume. Routing via standard worker...")
@@ -277,7 +272,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                         node_name=info["node_name"],
                         image_pull_secrets=pull_secrets,
                         master_ns=master_ns,
-                        suffix=worker.suffix,
+                        suffix=worker.suffix
                     )
 
                 # Calculate the exact job name by asking the worker for its class suffix
@@ -313,15 +308,13 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="Backup Kubernetes volumes",
-        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80),
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80)
     )
 
     # Global options
     global_group = parser.add_argument_group("global")
     global_group.add_argument("-c", "--context", type=str, metavar="CT", default=None, help="Local kubectl context")
-    global_group.add_argument(
-        "-n", "--namespace", type=str, metavar="NS", default=None, help="Target a namespace for backup job run"
-    )
+    global_group.add_argument("-n", "--namespace", type=str, metavar="NS", default=None, help="Target a namespace for backup job run")
     global_group.add_argument("-j", "--job", action="store_true", help="Run backup job(s) based on current backup-map")
     global_group.add_argument("-bm", "--backup-map", action="store_true", help="Manage backup-map configuration")
 
@@ -333,18 +326,23 @@ def main():
 
     args = parser.parse_args()
 
-    cluster_name_env = os.getenv("CLUSTER_NAME")
-    namespace_env = os.getenv("NAMESPACE")
-
-    cluster_context = cluster_name_env if cluster_name_env else args.context
-    namespace_input = namespace_env if namespace_env else args.namespace
-
-    kube = VolumeBackupJob(context=cluster_context, namespace="default")
-    kube_client_sigkill = kube
+    cluster_context = args.context
+    namespace_input = args.namespace
 
     # Strict validation of -bm sub-options usage
     if (args.apply or args.preview or args.get_current) and not args.backup_map:
         print("error: --preview (-p), --apply (-a), and --get-current (-g) can only be used with --backup-map (-bm).")
+        sys.exit(1)
+
+    # Reject if kube context if missing
+    try:
+        kube = VolumeBackupJob(context=cluster_context, namespace="default")
+        kube_client_sigkill = kube
+    except ValueError as e:
+        if not args.job and not args.backup_map:
+            print("error: please use --help for usage instructions")
+            sys.exit(1)
+        print(f"error: {e}")
         sys.exit(1)
 
     master_ns = get_secret_config_namespace(kube)
@@ -396,9 +394,7 @@ def main():
 
         # 3. ACTION: -bm alone -> Error message
         else:
-            print(
-                "error: --backup-map (-bm) requires an action option (-g/--get-current, -p/--preview, or -a/--apply)."
-            )
+            print("error: --backup-map (-bm) requires an action option (-g/--get-current, -p/--preview, or -a/--apply).")
             print("examples:")
             print("  bkup -bm -g        # Read saved backup-map from Kubernetes")
             print("  bkup -bm -p        # Preview full cluster backup-map")
@@ -406,7 +402,7 @@ def main():
             sys.exit(1)
 
     else:
-        print("error: please use --help for usage instructions")
+        print('error: please use --help for usage instructions')
 
 
 if __name__ == "__main__":

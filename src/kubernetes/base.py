@@ -7,31 +7,44 @@ from kubernetes import client, config
 
 class KubernetesBase:
     def __init__(self, context: str = None, namespace: str = None):
-        """Init Kubernetes connexion, detect if CLI or in-cluster"""
+        """Init Kubernetes connexion."""
+        is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+
+        # Security to force give a context (to avoid using default context in case of CLI usage)
+        if not context and not is_in_cluster:
+            raise ValueError(
+                "No cluster context provided. "
+                "Please specify a target context using '--context' (-c)."
+            )
+
         self.context = context
         self.namespace = namespace if namespace else "default"
 
         try:
-            config.load_incluster_config()
-        except config.ConfigException:
-            try:
-                config.load_kube_config(context=context)
-            except Exception as e:
-                print(f"error: failed to load kubeconfig: {e}")
+            if is_in_cluster:
+                config.load_incluster_config()
+            else:
+                config.load_kube_config(context=self.context)
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Kubernetes connection with context '{self.context}': {e}")
+
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
         self.storage_v1 = client.StorageV1Api()
 
+
     def get_cluster_name(self) -> str:
         """Dynamically resolve the targeted cluster name context descriptor."""
         if self.context:
             return self.context
-        return os.getenv("CLUSTER_NAME", "in-cluster")
+        return "in-cluster"
+
 
     def get_namespace(self) -> str:
         """Return the current context target working namespace."""
         return self.namespace
+
 
     def get_current_namespace_from_pod(self) -> str:
         """Get the namespace where pod is running (return default if not found)."""
@@ -45,6 +58,7 @@ class KubernetesBase:
 
         return None
 
+
     def list_namespaces(self) -> list:
         try:
             ns_list = self.core_v1.list_namespace()
@@ -53,6 +67,7 @@ class KubernetesBase:
             print(f"error: failed to list namespaces: {e}")
             return []
 
+
     def list_pvc(self) -> list:
         try:
             pvcs = self.core_v1.list_namespaced_persistent_volume_claim(namespace=self.namespace)
@@ -60,6 +75,7 @@ class KubernetesBase:
         except Exception as e:
             print(f"error: failed to list PVCs in {self.namespace}: {e}")
             return []
+
 
     def get_pvc(self, pvc_name: str) -> list:
         """Look for PVC from Deployments and StatefulSets using template specs."""
@@ -84,34 +100,19 @@ class KubernetesBase:
             print(f"error: failed to scan workload mounts for PVC '{pvc_name}': {e}")
         return targets
 
-    def get_pod_ip(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> str:
-        """Find the exact IP of the running Pod mounted on the target PVC (waits if starting up)."""
-        print(f"  info: resolving active Pod IP for PVC '{pvc_name}'...")
-        start_time = time.time()
 
-        while time.time() - start_time < timeout:
-            try:
-                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
-                for pod in pods.items:
-                    if pod.status.phase != "Running":
-                        continue
+    def get_pod_ip(self, pvc_name: str) -> str:
+        """Find the exact IP of the running Pod mounted on the target PVC."""
+        pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+        for pod in pods.items:
+            if pod.status.phase == "Running" and pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                        if pod.status.pod_ip:
+                            return pod.status.pod_ip
 
-                    if pod.spec.volumes:
-                        for vol in pod.spec.volumes:
-                            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                                if pod.status.pod_ip:
-                                    print(
-                                        f"  info: detected active Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}"
-                                    )
-                                    return pod.status.pod_ip
-            except Exception as e:
-                print(f"  warn: error resolving pod IP for PVC '{pvc_name}' ({e}), retrying...")
+        raise RuntimeError(f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}'")
 
-            time.sleep(check_interval)
-
-        raise RuntimeError(
-            f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}' within {timeout}s"
-        )
 
     def get_image_pull_secrets(self, resource_type: str, resource_name: str) -> list:
         """Dynamically extract imagePullSecrets names defined on a specific workload resource."""
@@ -132,6 +133,7 @@ class KubernetesBase:
 
         return []
 
+
     def _list_pvc_mount_points(self, pvc_name: str, pod_spec) -> list:
         """Get all mounted paths in a PVC"""
         results = []
@@ -149,17 +151,16 @@ class KubernetesBase:
             return results
 
         for container in pod_spec.containers:
-            if hasattr(container, "volume_mounts") and container.volume_mounts:
+            if hasattr(container, 'volume_mounts') and container.volume_mounts:
                 for mount in container.volume_mounts:
                     if mount.name == pod_volume_name:
-                        results.append(
-                            {
-                                "container_name": container.name,
-                                "mount_path": mount.mount_path,
-                                "read_only": mount.read_only if mount.read_only is not None else False,
-                            }
-                        )
+                        results.append({
+                            "container_name": container.name,
+                            "mount_path": mount.mount_path,
+                            "read_only": mount.read_only if mount.read_only is not None else False
+                        })
         return results
+
 
     def get_node_name(self, pvc_name: str) -> str:
         """Try to get node name where PVC is or has been attached."""
@@ -199,6 +200,7 @@ class KubernetesBase:
             print(f"  error: failed to resolve node attachment for PVC '{pvc_name}': {e}")
             return ""
 
+
     def get_replicas(self, resource_type: str, resource_name: str) -> int:
         try:
             if resource_type.lower() == "statefulset":
@@ -211,6 +213,7 @@ class KubernetesBase:
             return 0
         return 0
 
+
     def scale_replicas(self, resource_type: str, resource_name: str, replicas: int):
         body = {"spec": {"replicas": replicas}}
         try:
@@ -221,6 +224,7 @@ class KubernetesBase:
             print(f"  info: scaled {resource_type}/{resource_name} to {replicas} replicas.")
         except Exception as e:
             print(f"  error: failed to scale {resource_type}/{resource_name}: {e}")
+
 
     def get_workload_image(self, resource_type: str, resource_name: str) -> str:
         """Extract exact container image used by workload. Raises ValueError if missing."""
@@ -242,6 +246,7 @@ class KubernetesBase:
             raise ValueError(f"Failed to read image for {resource_type}/{resource_name}: {e}")
 
         raise ValueError(f"No image defined on container for {resource_type}/{resource_name}")
+
 
     def get_configmap(self, name: str, namespace: str) -> dict:
         """Fetch a ConfigMap from the cluster and return its unpacked data payload."""
@@ -272,6 +277,7 @@ class KubernetesBase:
             print(f"  error: failed to read ConfigMap '{name}': {e}")
             raise e
 
+
     def save_to_configmap(self, name: str, namespace: str, data: dict):
         """Create or update a ConfigMap with the provided backup-map data structure."""
         formatted_data = {}
@@ -287,7 +293,7 @@ class KubernetesBase:
             api_version="v1",
             kind="ConfigMap",
             metadata=client.V1ObjectMeta(name=name, namespace=namespace),
-            data=formatted_data,
+            data=formatted_data
         )
         try:
             self.core_v1.read_namespaced_config_map(name=name, namespace=namespace)
@@ -301,6 +307,7 @@ class KubernetesBase:
                 print(f"error: failed to save ConfigMap {name}: {e}")
                 raise e
 
+
     def get_secret_payload(self, name: str, namespace: str) -> dict:
         """Centralized and safe extraction of Secret base64 values decoded into a plain text map."""
         import base64
@@ -309,9 +316,10 @@ class KubernetesBase:
             secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
             if not secret.data:
                 return {}
-            return {k: base64.b64decode(v).decode("utf-8") for k, v in secret.data.items()}
+            return {k: base64.b64decode(v).decode('utf-8') for k, v in secret.data.items()}
         except Exception:
             return {}
+
 
     def get_job_name(self, pvc_name: str, suffix: str = "") -> str:
         """Generates the unique Job name with the original prefix under the 63 characters limit."""
@@ -328,9 +336,11 @@ class KubernetesBase:
         truncated_pvc = pvc_name[:allowed_pvc_len]
         return f"{prefix}{truncated_pvc}-{pvc_hash}{suffix_str}"
 
+
     def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs) -> dict:
         """Create a base job layout configuration block."""
         return {}
+
 
     def _launch_generic_job(self, template_path: str, replacements: dict):
         if not os.path.exists(template_path):
@@ -366,7 +376,7 @@ class KubernetesBase:
 
         pod_spec["tolerations"] = [
             {"operator": "Exists", "effect": "NoSchedule"},
-            {"operator": "Exists", "effect": "NoExecute"},
+            {"operator": "Exists", "effect": "NoExecute"}
         ]
 
         # Inject original envFrom into database-dumper container if present
@@ -396,33 +406,25 @@ class KubernetesBase:
                 if name == "STORAGE_ADDRESS":
                     val = secret_data.get("storage-address")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_USERNAME":
                     val = secret_data.get("storage-username")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_PASSWORD":
                     val = secret_data.get("storage-password")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "CLUSTER_NAME":
                     val = secret_data.get("cluster-name")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 else:
@@ -443,20 +445,18 @@ class KubernetesBase:
             print(f"  error: failed to submit job manifest '{job_name}': {e}")
             raise e
 
+
     def delete_backup_job(self, pvc_name: str, suffix: str = ""):
         job_name = self.get_job_name(pvc_name, suffix=suffix)
         try:
-            self.batch_v1.delete_namespaced_job(
-                name=job_name, namespace=self.namespace, body=client.V1DeleteOptions(propagation_policy="Background")
-            )
+            self.batch_v1.delete_namespaced_job(name=job_name, namespace=self.namespace, body=client.V1DeleteOptions(propagation_policy="Background"))
             print(f"  info: deleted backup job {job_name}")
         except client.exceptions.ApiException as e:
             if e.status != 404:
                 print(f"  warn: failed to delete job {job_name}: {e}")
 
-    def wait_for_scale_down(
-        self, resource_type: str, resource_name: str, timeout: int = 300, check_interval: int = 5
-    ) -> bool:
+
+    def wait_for_scale_down(self, resource_type: str, resource_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
         """Block execution until the targeted workload replicas drop strictly to 0 according to the API."""
         print(f"  info: waiting for {resource_type}/{resource_name} to scale down to 0...")
         start_time = time.time()
@@ -473,6 +473,30 @@ class KubernetesBase:
         print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale down.")
         return False
 
+
+    def wait_for_scale_up(self, resource_type: str, resource_name: str, target_replicas: int, timeout: int = 300, check_interval: int = 5) -> bool:
+        """Block execution until the targeted workload replicas scale back up and have active IPs assigned."""
+        print(f"  info: waiting for {resource_type}/{resource_name} to scale up to {target_replicas} replica(s)...")
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            current_replicas = self.get_replicas(resource_type, resource_name)
+
+            if current_replicas >= target_replicas:
+                # Ensure at least one Pod is Running with a valid Pod IP assigned
+                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+                has_active_ip = any(pod.status.phase == "Running" and pod.status.pod_ip for pod in pods.items)
+
+                if has_active_ip:
+                    print(f"  info: {resource_type}/{resource_name} successfully scaled up to {current_replicas} replica(s) with active IP.")
+                    return True
+
+            time.sleep(check_interval)
+
+        print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale up.")
+        return False
+
+
     def is_topology_constrained(self, pvc_name: str) -> bool:
         """Analyzes the PV storage driver to detect the presence of localized Cloud storage."""
         try:
@@ -481,16 +505,13 @@ class KubernetesBase:
             if pv_name:
                 pv = self.core_v1.read_persistent_volume(name=pv_name)
                 csi_driver = pv.spec.csi.driver.lower() if pv.spec.csi else ""
-                if (
-                    any(cloud in csi_driver for cloud in ["azure", "aws", "ebs", "gce", "gcp"])
-                    or pv.spec.nfs
-                    or "file" in csi_driver
-                ):
+                if any(cloud in csi_driver for cloud in ["azure", "aws", "ebs", "gce", "gcp"]) or pv.spec.nfs or "file" in csi_driver:
                     return False
                 return True
         except Exception as e:
             print(f"      warn: storage topology assessment bypassed ({e}). Defaulting to constrained.")
         return True
+
 
     def wait_for_volume_detachment(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
         """Blocks execution as long as an application pod actively uses this PVC in the namespace."""
@@ -510,10 +531,7 @@ class KubernetesBase:
                     if pod.spec.volumes:
                         for vol in pod.spec.volumes:
                             if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                                if (
-                                    pod.status.phase in ["Running", "Pending"]
-                                    or pod.metadata.deletion_timestamp is not None
-                                ):
+                                if pod.status.phase in ["Running", "Pending"] or pod.metadata.deletion_timestamp is not None:
                                     pvc_is_locked = True
                                     pods_locking_pvc.append(pod.metadata.name)
                                     break
@@ -530,6 +548,7 @@ class KubernetesBase:
 
         print(f"    warn: timeout reached while waiting for PVC '{pvc_name}' to be released. Proceeding anyway...")
         return False
+
 
     def wait_for_job_completion(self, job_name: str, timeout: int = 600, check_interval: int = 5) -> bool:
         """Block execution until the backup Kubernetes Job reaches 'Succeeded' or 'Failed' status."""
@@ -552,6 +571,7 @@ class KubernetesBase:
             time.sleep(check_interval)
         print(f"  error: timeout reached waiting for job '{job_name}' completion.")
         return False
+
 
     def wait_for_jobs_deletion(self, pvc_list: list, timeout: int = 60, check_interval: int = 2) -> bool:
         """Block execution during Phase 0 to ensure legacy old cleanup runs are fully purged."""
