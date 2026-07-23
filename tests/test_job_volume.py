@@ -10,7 +10,7 @@ def test_create_backup_job_volume(mock_launch_generic):
 
     # Simulate a job creation call
     worker.create_backup_job(
-        pvc_name="my-data-pvc", mounted_path="/var/lib/data", node_name="node-01", master_ns="clustersnap-system"
+        pvc_name="my-data-pvc", mounted_path="/var/lib/data", node_name="node-01", master_ns="bkup-system"
     )
 
     # Verify that the base method was called with the correct replacements

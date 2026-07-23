@@ -8,7 +8,10 @@ from src.utils.stream import is_unix_pipe, GzipStreamer, TarGenerator
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clustersnap Backup Worker")
+    parser = argparse.ArgumentParser(
+        description="bkup exporter",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80),
+    )
     parser.add_argument("--path", type=str, required=True, help="Path to backup (directory or UNIX pipe)")
     parser.add_argument("--pvc", type=str, required=True, help="Name of the PVC")
     parser.add_argument("--type", type=str, default=None, choices=["volume", "pg_dump"], help="Type of backup")

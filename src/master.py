@@ -15,15 +15,15 @@ kube_client_sigkill = None
 
 
 def get_secret_config_namespace(kube_client) -> str:
-    """Find the namespace containing the 'clustersnap-config' Secret."""
+    """Find the namespace containing the 'bkup-config' Secret."""
     for ns in kube_client.list_namespaces():
         try:
-            if kube_client.get_secret_payload("clustersnap-config", namespace=ns):
+            if kube_client.get_secret_payload("bkup-config", namespace=ns):
                 return ns
         except Exception:
             continue
 
-    raise RuntimeError("Error: Secret 'clustersnap-config' not found in any namespace.")
+    raise RuntimeError("Error: Secret 'bkup-config' not found in any namespace.")
 
 
 def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
@@ -342,7 +342,7 @@ def main():
         try:
             bpm.get_backup_map(kube, master_ns=master_ns)
         except Exception as e:
-            print(f"error: could not retrieve 'clustersnap-backup-map' ConfigMap in namespace '{master_ns}': {e}")
+            print(f"error: could not retrieve 'bkup-backup-map' ConfigMap in namespace '{master_ns}': {e}")
             print("hint: generate and apply one first using 'python -m src.master -bm -a'")
             sys.exit(1)
 
@@ -377,7 +377,7 @@ def main():
             backup_map = bpm.backup_map_scanner(kube, all_cluster_namespaces)
 
             if args.apply:
-                kube.save_to_configmap(name="clustersnap-backup-map", namespace=master_ns, data=backup_map)
+                kube.save_to_configmap(name="bkup-backup-map", namespace=master_ns, data=backup_map)
                 print(f"info: backup-map successfully applied and saved to ConfigMap in namespace '{master_ns}'.")
             else:
                 print(yaml.dump(backup_map, sort_keys=False, default_flow_style=False))

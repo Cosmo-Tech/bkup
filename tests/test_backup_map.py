@@ -12,7 +12,7 @@ def test_get_backup_map_empty():
     backup_map = get_backup_map(mock_kube)
 
     assert backup_map == {"cluster": "test-cluster", "namespaces": []}
-    mock_kube.get_configmap.assert_called_once_with(name="clustersnap-backup-map", namespace="default")
+    mock_kube.get_configmap.assert_called_once_with(name="bkup-backup-map", namespace="default")
 
 
 def test_get_backup_map_with_data():

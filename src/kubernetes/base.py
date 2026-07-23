@@ -307,7 +307,7 @@ class KubernetesBase:
 
     def get_job_name(self, pvc_name: str, suffix: str = "") -> str:
         """Generates the unique Job name with the original prefix under the 63 characters limit."""
-        prefix = "clustersnap-backup-"
+        prefix = "bkup-backup-"
         suffix_str = f"-{suffix}" if suffix else ""
         candidate_name = f"{prefix}{pvc_name}{suffix_str}"
 
@@ -329,7 +329,7 @@ class KubernetesBase:
             raise FileNotFoundError(f"Template path '{template_path}' not found.")
 
         master_ns = replacements.get("master_ns") or self.get_current_namespace_from_pod() or "default"
-        secret_data = self.get_secret_payload("clustersnap-config", master_ns)
+        secret_data = self.get_secret_payload("bkup-config", master_ns)
 
         with open(template_path, "r") as f:
             template_content = f.read()
@@ -389,7 +389,7 @@ class KubernetesBase:
                     val = secret_data.get("storage-address")
                     if not val:
                         raise ValueError(
-                            f"Required key 'storage-address' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')"
+                            f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
                         )
                     final_overrides[name] = {"name": name, "value": val}
 
@@ -397,7 +397,7 @@ class KubernetesBase:
                     val = secret_data.get("storage-username")
                     if not val:
                         raise ValueError(
-                            f"Required key 'storage-username' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')"
+                            f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
                         )
                     final_overrides[name] = {"name": name, "value": val}
 
@@ -405,7 +405,7 @@ class KubernetesBase:
                     val = secret_data.get("storage-password")
                     if not val:
                         raise ValueError(
-                            f"Required key 'storage-password' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')"
+                            f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
                         )
                     final_overrides[name] = {"name": name, "value": val}
 
@@ -413,7 +413,7 @@ class KubernetesBase:
                     val = secret_data.get("cluster-name")
                     if not val:
                         raise ValueError(
-                            f"Required key 'cluster-name' missing in Secret 'clustersnap-config' (namespace: '{master_ns}')"
+                            f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
                         )
                     final_overrides[name] = {"name": name, "value": val}
 
@@ -496,7 +496,7 @@ class KubernetesBase:
                 pods_locking_pvc = []
 
                 for pod in pods.items:
-                    if pod.metadata.name.startswith("clustersnap-backup-"):
+                    if pod.metadata.name.startswith("bkup-backup-"):
                         continue
 
                     if pod.spec.volumes:

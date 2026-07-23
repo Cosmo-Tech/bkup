@@ -3,7 +3,7 @@ import yaml
 
 def get_backup_cache(kube) -> dict:
     """Get the existing ConfigMap of the backup-cache."""
-    saved_cache = kube.get_configmap(name="clustersnap-backup-cache", namespace=kube.get_namespace())
+    saved_cache = kube.get_configmap(name="bkup-backup-cache", namespace=kube.get_namespace())
 
     if not saved_cache:
         return {"namespaces": []}
@@ -13,8 +13,8 @@ def get_backup_cache(kube) -> dict:
         return saved_cache
 
     # If get_configmap returned the global ConfigMap dictionary with its file key
-    if isinstance(saved_cache, dict) and "clustersnap-backup-cache.yaml" in saved_cache:
-        content = saved_cache["clustersnap-backup-cache.yaml"]
+    if isinstance(saved_cache, dict) and "bkup-backup-cache.yaml" in saved_cache:
+        content = saved_cache["bkup-backup-cache.yaml"]
         if isinstance(content, dict) and "namespaces" in content:
             return content
         try:
@@ -33,9 +33,9 @@ def save_backup_cache(kube, cache_data: dict, master_namespace: str):
     try:
         kube.namespace = master_namespace
         kube.save_to_configmap(
-            name="clustersnap-backup-cache",
+            name="bkup-backup-cache",
             namespace=master_namespace,
-            data={"clustersnap-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)},
+            data={"bkup-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)},
         )
     finally:
         kube.namespace = orig_ns
@@ -46,7 +46,7 @@ def clear_backup_cache(kube, master_namespace: str):
     orig_ns = kube.namespace
     try:
         kube.namespace = master_namespace
-        kube.save_to_configmap(name="clustersnap-backup-cache", namespace=master_namespace, data={})
+        kube.save_to_configmap(name="bkup-backup-cache", namespace=master_namespace, data={})
     except Exception as e:
         print(f"  warn: failed to clear backup cache ConfigMap: {e}")
     finally:

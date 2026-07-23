@@ -45,7 +45,7 @@ def test_get_job_name_truncation(k8s_base):
     # Case 1: Short name (prefix 19 chars + 10 = 29 < 63)
     short_pvc = "my-pvc-123"
     job_name = k8s_base.get_job_name(short_pvc, suffix="volume")
-    assert job_name == "clustersnap-backup-my-pvc-123-volume"
+    assert job_name == "bkup-backup-my-pvc-123-volume"
     assert len(job_name) <= 63
 
     # Case 2: Name too long (must be truncated and hashed)
@@ -53,7 +53,7 @@ def test_get_job_name_truncation(k8s_base):
     job_name = k8s_base.get_job_name(long_pvc, suffix="volume")
 
     assert len(job_name) <= 63
-    assert job_name.startswith("clustersnap-backup-this-is-a-very-long")
+    assert job_name.startswith("bkup-backup-this-is-a-very-long")
     assert "-volume" in job_name
     # Verify that an md5 hash (8 characters) is present before the suffix
     assert len(job_name.split("-")[-2]) == 8

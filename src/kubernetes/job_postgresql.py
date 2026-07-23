@@ -84,8 +84,8 @@ class PostgresBackupJob(KubernetesBase):
             saved_map = bpm.get_backup_map(self, master_ns=master_ns)
 
             # Unpack ConfigMap wrapper if present
-            if isinstance(saved_map, dict) and "clustersnap-backup-map.yaml" in saved_map:
-                content = saved_map["clustersnap-backup-map.yaml"]
+            if isinstance(saved_map, dict) and "bkup-backup-map.yaml" in saved_map:
+                content = saved_map["bkup-backup-map.yaml"]
                 if isinstance(content, str):
                     saved_map = yaml.safe_load(content) or {}
                 elif isinstance(content, dict):

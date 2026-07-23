@@ -1,18 +1,18 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: clustersnap-master
+  name: bkup-master
   namespace: ${NAMESPACE}
 spec:
   containers:
-    - name: clustersnap-master
-      image: ghcr.io/cosmo-tech/clustersnap:latest
+    - name: bkup-master
+      image: ghcr.io/cosmo-tech/bkup:latest
       imagePullPolicy: Always
       env:
         - name: CLUSTER_NAME
           valueFrom:
             secretKeyRef:
-              name: clustersnap-config
+              name: bkup-config
               key: cluster-name
               optional: false
         - name: NAMESPACE
@@ -20,21 +20,21 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
   imagePullSecrets:
-    - name: registry-auth-clustersnap
-  serviceAccountName: clustersnap
+    - name: registry-auth-bkup
+  serviceAccountName: bkup
 
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: clustersnap
+  name: bkup
   namespace: ${NAMESPACE}
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: clustersnap
+  name: bkup
 rules:
   # Core resources
   - apiGroups: [""]
@@ -77,12 +77,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: clustersnap-pvc-binding
+  name: bkup-pvc-binding
 subjects:
   - kind: ServiceAccount
-    name: clustersnap
+    name: bkup
     namespace: ${NAMESPACE}
 roleRef:
   kind: ClusterRole
-  name: clustersnap
+  name: bkup
   apiGroup: rbac.authorization.k8s.io

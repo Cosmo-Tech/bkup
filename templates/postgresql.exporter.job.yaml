@@ -14,9 +14,9 @@ spec:
     spec:
       restartPolicy: Never    
       containers:
-        # --- MAIN CONTAINER: Clustersnap core tool with native Python environment ---
+        # --- MAIN CONTAINER: expoter.py ---
         - name: worker
-          image: ghcr.io/cosmo-tech/clustersnap:latest
+          image: ghcr.io/cosmo-tech/bkup:latest
           imagePullPolicy: Always
           command: ["/bin/sh", "-c"]
           args:

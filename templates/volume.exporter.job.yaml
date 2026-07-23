@@ -20,7 +20,7 @@ spec:
                       - "{{ NODE_NAME }}"
       containers:
         - name: worker
-          image: ghcr.io/cosmo-tech/clustersnap:latest
+          image: ghcr.io/cosmo-tech/bkup:latest
           imagePullPolicy: Always
           command: ["python", "-m", "src.exporter"]
           args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
