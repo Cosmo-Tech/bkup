@@ -27,7 +27,7 @@ def get_secret_config_namespace(kube_client) -> str:
 
 
 def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
-    """Restore scaled down replicas to their original quantity"""
+    """Restore scaled down replicas to their original quantity."""
     orig_ns = kube_client.namespace
     try:
         kube_client.namespace = master_ns
@@ -58,7 +58,9 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
             if current_replicas != info["initial_replicas"]:
                 print(f"  info: [RESTORE] restoring {resource_key} from {current_replicas} to {info['initial_replicas']} replicas...")
                 kube_client.scale_replicas(
-                    info["resource_type"], info["resource_name"], replicas=info["initial_replicas"]
+                    info["resource_type"],
+                    info["resource_name"],
+                    replicas=info["initial_replicas"]
                 )
     # Fallback restoration using persisted backup cache ConfigMap
     elif cache_namespaces:
@@ -97,14 +99,24 @@ def restore_production_on_signal(signum, frame):
     sys.exit(1)
 
 
+def get_active_cluster_nodes(kube) -> set:
+    """Fetch all active cluster node names to validate node existence."""
+    try:
+        nodes = kube.core_v1.list_node()
+        return {node.metadata.name for node in nodes.items}
+    except Exception as e:
+        print(f"  warn: failed to list active cluster nodes: {e}")
+        return set()
+
+
 def run_backup_job(cluster_context: str, namespace: str):
     """
     Global sequential orchestrator:
     Phase 0: Cleanup + wait for deletion of old Jobs
-    Phase 1: Gather configuration + Trigger Scale Down (0)
+    Phase 1: Gather configuration from backup-map + Trigger Scale Down (0)
     Phase 2: Wait for complete production workload termination
     Phase 3: Trigger all new backup Jobs concurrently via K8s control plane
-    Phase 4: Restore (Scale Up) production workloads to original layout states
+    Phase 4: Restore (Scale Up/Down) production workloads to original layout states
     """
     global backup_workloads
     global kube_client_sigkill
@@ -119,11 +131,23 @@ def run_backup_job(cluster_context: str, namespace: str):
         return
 
     master_ns = get_secret_config_namespace(kube)
+    active_nodes = get_active_cluster_nodes(kube)
+
+    # Fetch backup-map ConfigMap for current namespace claims definition
+    ns_claims_entries = []
+    try:
+        backup_map_config = bpm.get_backup_map(kube, master_ns=master_ns)
+        if isinstance(backup_map_config, dict) and "namespaces" in backup_map_config:
+            for ns_entry in backup_map_config.get("namespaces", []):
+                if ns_entry.get("name") == namespace:
+                    ns_claims_entries = ns_entry.get("claims", []) or []
+                    break
+    except Exception as e:
+        print(f"  warn: could not load backup-map claims for namespace '{namespace}': {e}")
 
     print("\n==================================================")
     print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
     print("==================================================")
-
 
     # ==================================================
     # PHASE 0 : CLEANUP OLD JOBS
@@ -168,15 +192,29 @@ def run_backup_job(cluster_context: str, namespace: str):
             resource_type, resource_name = target['resource'].split('/')
             mounted_path = target['mount_path']
 
-            mount_info = {"container": resource_name, "resource": resource_type}
+            mount_info = {
+                "container": resource_name,
+                "resource": resource_type
+            }
             is_postgres = psql.is_postgresql_workload(mount_info)
-            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads because it will be used to run pg_dump
+            should_scale = not is_postgres
 
             if resource_key not in backup_workloads:
-                if should_scale and kube.is_topology_constrained(pvc_name):
-                    node_name = kube.get_node_name(pvc_name)
-                else:
-                    node_name = ""
+                # 1. Read attachment-node from backup-map ConfigMap claims
+                node_name = ""
+                for claim in ns_claims_entries:
+                    if claim.get("name") == pvc_name:
+                        raw_node = claim.get("attachment-node") or claim.get("attachment_node") or ""
+
+                        # 2. Safety check: Verify node existence in cluster
+                        if raw_node:
+                            if active_nodes and raw_node not in active_nodes:
+                                print(f"  warn: Attachment-node '{raw_node}' for PVC '{pvc_name}' does not exist in cluster. Ignoring node selector.")
+                                node_name = ""
+                            else:
+                                node_name = raw_node
+                                print(f"  info: PVC '{pvc_name}' mapped to node '{node_name}' from backup-map.")
+                        break
 
                 cached_val = bpc.find_cached_replicas(cache_data, namespace, resource_type, resource_name)
                 real_replicas = kube.get_replicas(resource_type, resource_name)
@@ -250,7 +288,11 @@ def run_backup_job(cluster_context: str, namespace: str):
                         kube.wait_for_scale_up(info["resource_type"], info["resource_name"], target_replicas=target_count)
 
                     worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
-                    target_ip = kube.get_pod_ip(info["pvc_name"])
+                    target_ip = kube.get_pod_ip(
+                        resource_type=info["resource_type"],
+                        resource_name=info["resource_name"],
+                        pvc_name=info["pvc_name"]
+                    )
 
                     worker.create_backup_job(
                         pvc_name=info["pvc_name"],
