@@ -1,0 +1,22 @@
+name: Security Scanner
+run-name: "[security] branch=${{ github.ref_name }} - ${{ github.event.head_commit.message }}"
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  scan-secrets:
+    name: Check for hardcoded secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Important : demande de télécharger tout l'historique pour chercher partout
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
