@@ -1,5 +1,3 @@
-import time
-import yaml
 
 
 def list_pvc(kube) -> list:

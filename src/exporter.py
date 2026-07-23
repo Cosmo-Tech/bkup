@@ -47,14 +47,14 @@ def main():
             storage_password=storage_password,
             root_path_target=root_path_target
         )
-    
+
     # # AWS/S3
     # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
     #     # from src.storage.s3 import S3Storage
     #     # storage_provider = S3Storage(storage_address, storage_username, storage_password)
     #     print("error: S3 storage provider is detected but not implemented yet.")
     #     sys.exit(1)
-        
+
     else:
         print(f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address}). Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net")
         sys.exit(1)
@@ -112,7 +112,7 @@ def main():
                 # Simple timer before next database
                 time.sleep(1)
 
-        # Case 2 : path is a classic directory 
+        # Case 2 : path is a classic directory
         else:
             current_db_file = '/shared/current_db'
             if is_unix_pipe(args.path):
@@ -142,7 +142,7 @@ def main():
                 with open(current_db_file, 'w') as f:
                     pass
 
-            print(f"info: backup streaming process completed successfully.")
+            print("info: backup streaming process completed successfully.")
 
     except Exception as e:
         print(f"error: backup execution failed: {e}")

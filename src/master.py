@@ -1,6 +1,5 @@
 import sys
 import argparse
-import time
 import signal
 import os
 import yaml
@@ -120,9 +119,9 @@ def run_backup_job(cluster_context: str, namespace: str):
 
     master_ns = get_secret_config_namespace(kube)
 
-    print(f"\n==================================================")
+    print("\n==================================================")
     print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
-    print(f"==================================================")
+    print("==================================================")
 
     print("\nPHASE 0: Cleaning existing backups jobs...")
     pvc_list = []
@@ -282,9 +281,9 @@ def run_backup_job(cluster_context: str, namespace: str):
         print("\nPHASE 4: Executing safety restoration check on production workloads...")
         restore_workloads_from_state(kube, master_ns, backup_workloads)
 
-    print(f"\n==================================================")
+    print("\n==================================================")
     print(f" BACKUP PROCESS CONCLUDED FOR NAMESPACE {namespace}")
-    print(f"==================================================")
+    print("==================================================")
 
 
 

@@ -1,5 +1,4 @@
 import yaml
-from kubernetes.client.rest import ApiException
 
 
 def get_backup_cache(kube) -> dict:
@@ -75,25 +74,25 @@ def find_cached_replicas(cache_data: dict, namespace: str, r_type: str, r_name: 
 def update_cached_replicas(cache_data: dict, namespace: str, r_type: str, r_name: str, replicas: int):
     """Insert or update a workload's replica state in the cache dictionary."""
     namespaces = cache_data.setdefault("namespaces", [])
-    
+
     ns_found = None
     for ns in namespaces:
         if ns.get("name") == namespace:
             ns_found = ns
             break
-            
+
     if not ns_found:
         ns_found = {"name": namespace, "resources": []}
         namespaces.append(ns_found)
-        
+
     resources = ns_found.setdefault("resources", [])
-    
+
     res_found = None
     for res in resources:
         if res.get("type") == r_type and res.get("name") == r_name:
             res_found = res
             break
-            
+
     if not res_found:
         resources.append({
             "type": r_type,
@@ -111,6 +110,6 @@ def remove_cached_resource(cache_data: dict, namespace: str, r_type: str, r_name
         if ns.get("name") == namespace:
             resources = ns.get("resources", [])
             ns["resources"] = [r for r in resources if not (r.get("type") == r_type and r.get("name") == r_name)]
-            
+
     # Remove namespaces with no resources left
     cache_data["namespaces"] = [ns for ns in namespaces if ns.get("resources")]

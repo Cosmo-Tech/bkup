@@ -42,6 +42,6 @@ class VolumeBackupJob(KubernetesBase):
         }
 
         self._launch_generic_job(
-            template_path="templates/volume.exporter.job.yaml", 
+            template_path="templates/volume.exporter.job.yaml",
             replacements=replacements
         )

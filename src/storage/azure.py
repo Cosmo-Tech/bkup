@@ -1,4 +1,3 @@
-import os
 from datetime import datetime
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceExistsError
@@ -14,7 +13,7 @@ class AzureStorage(Storage):
         self.client = BlobServiceClient(
             account_url=self.storage_address,
             credential=self.storage_password
-        )        
+        )
         self._ensure_blob_container_exists()
 
 
@@ -32,7 +31,7 @@ class AzureStorage(Storage):
 
     def upload_stream(self, pvc_name: str, path: str, data_generator, backup_type: str = None, db_name: str = None) -> bool:
         date_str = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        
+
         # Layout: <backup-type>/pvc_name/pvc_name-timestamp.tar.gz
         if backup_type == "pg_dump":
             target_file_name = f"{pvc_name}-{db_name}" if db_name else pvc_name
@@ -46,12 +45,12 @@ class AzureStorage(Storage):
 
         try:
             blob_client = self.client.get_blob_client(
-                container=self.blob_container, 
+                container=self.blob_container,
                 blob=blob_path
             )
 
             print(f"info: uploading directly to '{blob_path}'...")
-            
+
             # The Azure SDK natively supports data generators for chunked upload
             blob_client.upload_blob(data_generator, overwrite=True, max_concurrency=2)
             return True

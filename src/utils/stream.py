@@ -39,7 +39,7 @@ class GzipStreamer:
                 yield buffer.read()
                 buffer.seek(0)
                 buffer.truncate()
-        
+
         # On vide les derniers octets restants du compresseur (le footer gzip de sécurité)
         buffer.seek(0)
         yield buffer.read()

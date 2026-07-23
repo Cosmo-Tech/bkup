@@ -45,7 +45,7 @@ class KubernetesBase:
                     return f.read().strip()
             except IOError:
                 pass
-                
+
         return None
 
 
@@ -127,7 +127,7 @@ class KubernetesBase:
                 return [s.name for s in spec.image_pull_secrets]
         except Exception as e:
             print(f"  warn: failed to read imagePullSecrets for {resource_type}/{resource_name}: {e}")
-            
+
         return []
 
 
@@ -251,7 +251,7 @@ class KubernetesBase:
             configmap = self.core_v1.read_namespaced_config_map(name=name, namespace=namespace)
             if not configmap.data:
                 return {}
-            
+
             unpacked_data = {}
             for k, v in configmap.data.items():
                 if isinstance(v, str) and ("\n" in v or ":" in v or v.strip().startswith("-")):
@@ -322,10 +322,10 @@ class KubernetesBase:
         prefix = "clustersnap-backup-"
         suffix_str = f"-{suffix}" if suffix else ""
         candidate_name = f"{prefix}{pvc_name}{suffix_str}"
-        
+
         if len(candidate_name) <= 63:
             return candidate_name
-            
+
         # Cut name & set a hash if too long
         pvc_hash = hashlib.md5(pvc_name.encode('utf-8')).hexdigest()[:8]
         allowed_pvc_len = 63 - (len(prefix) + len(pvc_hash) + 1 + len(suffix_str))
@@ -460,16 +460,16 @@ class KubernetesBase:
         """Block execution until the targeted workload replicas drop strictly to 0 according to the API."""
         print(f"  info: waiting for {resource_type}/{resource_name} to scale down to 0...")
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
             current_replicas = self.get_replicas(resource_type, resource_name)
-            
+
             if current_replicas == 0 or current_replicas is None:
                 print(f"  info: {resource_type}/{resource_name} successfully stopped.")
                 return True
-                
+
             time.sleep(check_interval)
-            
+
         print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale down.")
         return False
 
@@ -504,7 +504,7 @@ class KubernetesBase:
                 for pod in pods.items:
                     if pod.metadata.name.startswith("clustersnap-backup-"):
                         continue
-                        
+
                     if pod.spec.volumes:
                         for vol in pod.spec.volumes:
                             if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
@@ -517,7 +517,7 @@ class KubernetesBase:
                     print(f"     Volume for PVC '{pvc_name}' is totally free from production pods workload!")
                     time.sleep(5)
                     return True
-                    
+
                 print(f"     pvc '{pvc_name}' is still locked by pod(s): {', '.join(pods_locking_pvc)}. Waiting...")
             except Exception as e:
                 print(f"     warn: error tracking pods storage locks ({e}), retrying...")

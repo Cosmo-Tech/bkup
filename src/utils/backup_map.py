@@ -1,6 +1,4 @@
-import json
 import yaml
-from kubernetes.client.rest import ApiException
 
 import src.utils.psql as psql
 
@@ -41,11 +39,11 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
     }
 
     original_ns = kube.namespace
-    
+
     for ns in target_namespaces:
         kube.namespace = ns
         current_ns = kube.get_namespace()
-        
+
         ns_data = {
             "name": current_ns,
             "claims": []
@@ -67,7 +65,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                         backup_type = "pg_dump"
                         postgres_mount = m
                         break
-            
+
             node_name = kube.get_node_name(pvc['name'])
 
             pvc_data = {
@@ -91,7 +89,7 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
                     })
             else:
                 pvc_data["mounts"] = mounts
-                
+
             ns_data["claims"].append(pvc_data)
         map_data["namespaces"].append(ns_data)
 
@@ -114,7 +112,7 @@ def get_pvc_from_map(kube_client, pvc_name: str) -> list:
                     if claim.get("name") == pvc_name:
                         # Return formatting structure standard compliant with master.py loops
                         return claim.get("mounts", [])
-                        
+
         return []
     except Exception as e:
         print(f"  warn: map reverse lookup failed for PVC '{pvc_name}': {e}")
@@ -125,7 +123,7 @@ def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
     """Interroge la ConfigMap de backup-map pour récupérer automatiquement la stratégie du PVC."""
     try:
         backup_map = get_backup_map(kube)
-        
+
         if not backup_map or "namespaces" not in backup_map:
             print("warn: backup-map not found, defaulting type to 'unknown'")
             return "unknown"
@@ -138,7 +136,7 @@ def resolve_backup_type_from_map(kube, pvc_name: str, namespace: str) -> str:
 
     except Exception as e:
         print(f"  warn: failed to resolve backup-type from map ({e}). Fallback to 'unknown'.")
-        
+
     return "unknown"
 
 
