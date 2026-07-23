@@ -50,12 +50,16 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
             except Exception:
                 pass
 
-    # 2. Replicas restoration (priority to session RAM, otherwise fallback to ConfigMap)
+    # 2. Replicas restoration
     if backup_workloads_map:
         for resource_key, info in backup_workloads_map.items():
-            if info.get("should_scale", True) and info["initial_replicas"] > 0:
-                print(f"  info: [RESTORE] restoring {resource_key} to {info['initial_replicas']} replicas...")
-                kube_client.namespace = info["namespace"]
+            kube_client.namespace = info["namespace"]
+            current_replicas = kube_client.get_replicas(info["resource_type"], info["resource_name"])
+
+            if current_replicas != info["initial_replicas"]:
+                print(
+                    f"  info: [RESTORE] restoring {resource_key} from {current_replicas} to {info['initial_replicas']} replicas..."
+                )
                 kube_client.scale_replicas(
                     info["resource_type"], info["resource_name"], replicas=info["initial_replicas"]
                 )
@@ -67,12 +71,13 @@ def restore_workloads_from_state(kube_client, master_ns, backup_workloads_map):
                 r_name = res.get("name")
                 initial_replicas = res.get("replicas", 0)
 
-                if initial_replicas > 0:
+                kube_client.namespace = ns_name
+                current_replicas = kube_client.get_replicas(r_type, r_name)
+                if current_replicas != initial_replicas:
                     try:
                         print(
-                            f"  info: [RESTORE CACHE] restoring {r_type}/{r_name} in namespace {ns_name} to {initial_replicas} replicas..."
+                            f"  info: [RESTORE CACHE] restoring {r_type}/{r_name} in namespace {ns_name} from {current_replicas} to {initial_replicas} replicas..."
                         )
-                        kube_client.namespace = ns_name
                         kube_client.scale_replicas(r_type, r_name, replicas=initial_replicas)
                     except Exception as e:
                         print(f"  error: failed to restore {r_type}/{r_name} from cache data: {e}")
@@ -165,7 +170,7 @@ def run_backup_job(cluster_context: str, namespace: str):
 
             mount_info = {"container": resource_name, "resource": resource_type}
             is_postgres = psql.is_postgresql_workload(mount_info)
-            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads in V1
+            should_scale = not is_postgres  # Do NOT scale down PostgreSQL workloads in Phase 1
 
             if resource_key not in backup_workloads:
                 if should_scale and kube.is_topology_constrained(pvc_name):
@@ -210,7 +215,7 @@ def run_backup_job(cluster_context: str, namespace: str):
                     print(f"  info: {resource_key} is already stopped.")
             else:
                 print(
-                    f"  info: {resource_key} is PostgreSQL — leaving replicas running ({info['initial_replicas']}) for online pg_dump."
+                    f"  info: {resource_key} is PostgreSQL — leaving replicas untouched ({info['initial_replicas']}) for now."
                 )
 
         # ==================================================
@@ -241,7 +246,14 @@ def run_backup_job(cluster_context: str, namespace: str):
                 pull_secrets = kube.get_image_pull_secrets(info["resource_type"], info["resource_name"])
 
                 if info["is_postgres"]:
-                    print(f"  info: {resource_key} identified as PostgreSQL database. Routing via pg_dump worker...")
+                    print(f"  info: {resource_key} identified as PostgreSQL database.")
+
+                    current_replicas = kube.get_replicas(info["resource_type"], info["resource_name"])
+                    if current_replicas == 0:
+                        print(
+                            f"  info: {resource_key} is currently stopped (0 replicas). Scaling UP to 1 for pg_dump..."
+                        )
+                        kube.scale_replicas(info["resource_type"], info["resource_name"], replicas=1)
                     worker = PostgresBackupJob(context=cluster_context, namespace=namespace)
                     target_ip = kube.get_pod_ip(info["pvc_name"])
 
@@ -343,7 +355,7 @@ def main():
             bpm.get_backup_map(kube, master_ns=master_ns)
         except Exception as e:
             print(f"error: could not retrieve 'bkup-backup-map' ConfigMap in namespace '{master_ns}': {e}")
-            print("hint: generate and apply one first using 'python -m src.master -bm -a'")
+            print("hint: generate and apply one first using 'bkup -bm -a'")
             sys.exit(1)
 
         # If a single namespace is targeted via -n, execute only this one
@@ -388,9 +400,9 @@ def main():
                 "error: --backup-map (-bm) requires an action option (-g/--get-current, -p/--preview, or -a/--apply)."
             )
             print("examples:")
-            print("  python -m src.master -bm -g        # Read saved backup-map from Kubernetes")
-            print("  python -m src.master -bm -p        # Preview full cluster backup-map")
-            print("  python -m src.master -bm -a        # Scan cluster and save backup-map to ConfigMap")
+            print("  bkup -bm -g        # Read saved backup-map from Kubernetes")
+            print("  bkup -bm -p        # Preview full cluster backup-map")
+            print("  bkup -bm -a        # Scan cluster and save backup-map to ConfigMap")
             sys.exit(1)
 
     else:

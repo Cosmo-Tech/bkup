@@ -3,3 +3,4 @@
 __pycache__/
 _bmd-output/
 docs
+*.egg-info
