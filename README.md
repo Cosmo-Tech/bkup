@@ -46,10 +46,10 @@
     ```
 
   * `config` Secret
-    * Edit `src/templates/config.secret.yaml` with your own config
+    * Edit `templates_install/config.secret.yaml` with your own config
     * Apply
       ```
-      NAMESPACE=YOUR_NAMESPACE envsubst < templates/backup.secret.yaml | kubectl apply -f -
+      NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/config.secret.yaml | kubectl apply -f -
       ```
 
   * `backup-map` ConfigMap
@@ -66,7 +66,7 @@
 ### Kubernetes
 * Create pod (& required resources such as RBAC etc...)
 ```
-NAMESPACE=YOUR_NAMESPACE envsubst < tests/resources_test.yaml | kubectl apply -f -
+NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/resources_test.yaml | kubectl apply -f -
 ```
 * Wait for it to end...
 
