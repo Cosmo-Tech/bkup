@@ -16,31 +16,32 @@ def is_unix_pipe(path: str) -> bool:
 
 class GzipStreamer:
     """
-    Lit un flux binaire brut (comme un pipe pg_dump)
-    et génère à la volée un flux compressé en gzip par morceaux (chunks),
-    évitant ainsi de charger le dump entier en mémoire RAM.
+    Reads a raw binary stream (like a pg_dump pipe)
+    and generates a chunked gzip compressed stream on the fly,
+    avoiding loading the entire dump into RAM.
     """
+
     def __init__(self, source_stream, chunk_size=65536):
         self.source_stream = source_stream
         self.chunk_size = chunk_size
 
     def __iter__(self):
-        # Utilisation d'un buffer mémoire pour capturer la sortie compressée
+        # Use a memory buffer to capture the compressed output
         buffer = io.BytesIO()
-        # On instancie le compresseur gzip natif sur notre buffer mémoire
+        # Instantiate the native gzip compressor on our memory buffer
         with gzip.GzipFile(fileobj=buffer, mode="wb") as compressor:
             while True:
                 chunk = self.source_stream.read(self.chunk_size)
                 if not chunk:
                     break
                 compressor.write(chunk)
-                # On libère la mémoire compressée accumulée dans le buffer
+                # Release the accumulated compressed memory in the buffer
                 buffer.seek(0)
                 yield buffer.read()
                 buffer.seek(0)
                 buffer.truncate()
-        
-        # On vide les derniers octets restants du compresseur (le footer gzip de sécurité)
+
+        # Flush the last remaining bytes from the compressor (the gzip security footer)
         buffer.seek(0)
         yield buffer.read()
 

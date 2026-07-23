@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "bkup"
+version = "0.0.0"
+description = "Cloud-Agnostic Kubernetes Backup Tool"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "kubernetes",
+    "azure-identity",
+    "azure-storage-blob",
+    "pydantic",
+    "psutil",
+    "PyYAML",
+]
+
+
+[project.scripts]
+bkup = "src.master:main"
+
+
+[tool.ruff]
+line-length = 120
+exclude = [ ".git", ".venv", "__pycache__" ]
+
+
+[tool.ruff.lint]
+select = [ "E", "F", "W" ]
+ignore = [ "E501" ] # ignore too long lines

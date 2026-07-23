@@ -6,14 +6,11 @@ import src.utils.backup_map as bpm
 class PostgresBackupJob(KubernetesBase):
     suffix = "pgdump"
 
-
     def __init__(self, context: str = None, namespace: str = None):
         super().__init__(context=context, namespace=namespace)
 
-
     def get_job_name(self, pvc_name: str, suffix: str = "pgdump") -> str:
         return super().get_job_name(pvc_name, suffix=suffix)
-
 
     def create_backup_job(self, pvc_name: str, mounted_path: str, node_name: str, **kwargs):
         """Backup PostgreSQL database over network with pg_dump using exact workload configuration."""
@@ -27,9 +24,7 @@ class PostgresBackupJob(KubernetesBase):
 
         postgres_image = self.get_workload_image(workload_type, workload_name)
         dumper_env_list, original_env_from = self._build_strict_postgres_job_env(
-            pvc_name=pvc_name,
-            target_ip=target_ip,
-            master_ns=master_ns
+            pvc_name=pvc_name, target_ip=target_ip, master_ns=master_ns
         )
 
         replacements = {
@@ -48,24 +43,18 @@ class PostgresBackupJob(KubernetesBase):
                         "nodeSelectorTerms": [
                             {
                                 "matchExpressions": [
-                                    {
-                                        "key": "kubernetes.io/hostname",
-                                        "operator": "In",
-                                        "values": [node_name]
-                                    }
+                                    {"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}
                                 ]
                             }
                         ]
                     }
                 }
-            } if node_name else None
+            }
+            if node_name
+            else None,
         }
 
-        self._launch_generic_job(
-            template_path="templates/postgresql.exporter.job.yaml",
-            replacements=replacements
-        )
-
+        self._launch_generic_job(template_path="templates/postgresql.exporter.job.yaml", replacements=replacements)
 
     def _resolve_secret_ref(self, secret_cfg: dict, default_ns: str) -> str:
         """Helper to safely fetch a secret key payload from Kubernetes API."""
@@ -85,7 +74,6 @@ class PostgresBackupJob(KubernetesBase):
 
         return payload[sec_key]
 
-
     def _build_strict_postgres_job_env(self, pvc_name: str, target_ip: str, master_ns: str = None) -> tuple[list, list]:
         """
         Builds standard PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE exclusively from
@@ -96,8 +84,8 @@ class PostgresBackupJob(KubernetesBase):
             saved_map = bpm.get_backup_map(self, master_ns=master_ns)
 
             # Unpack ConfigMap wrapper if present
-            if isinstance(saved_map, dict) and "clustersnap-backup-map.yaml" in saved_map:
-                content = saved_map["clustersnap-backup-map.yaml"]
+            if isinstance(saved_map, dict) and "bkup-backup-map.yaml" in saved_map:
+                content = saved_map["bkup-backup-map.yaml"]
                 if isinstance(content, str):
                     saved_map = yaml.safe_load(content) or {}
                 elif isinstance(content, dict):
@@ -113,7 +101,9 @@ class PostgresBackupJob(KubernetesBase):
             print(f"  warn: failed to read postgresql config from backup-map ({e})")
 
         if "password" in pg_map_config:
-            raise ValueError(f"Security Error: Plain-text 'password' key is forbidden in backup-map for PVC '{pvc_name}'. Use 'password-secret'.")
+            raise ValueError(
+                f"Security Error: Plain-text 'password' key is forbidden in backup-map for PVC '{pvc_name}'. Use 'password-secret'."
+            )
 
         dumper_env_list = []
 

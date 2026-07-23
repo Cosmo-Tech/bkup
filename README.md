@@ -1,7 +1,7 @@
-# ClusterSnap
+# bkup
 **Cloud-Agnostic Kubernetes Backup Tool**
 
-> Clustersnap is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
+> bkup is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
 
 * :minidisc: **Export** Kubernetes data to remote storage.
@@ -18,7 +18,7 @@
 
 ## Installation
 > [!CAUTION]
-> Clusternap is based on **scaling down** Kubernetes **pods** to orchestrate a clean backup plan. \
+> This tool is based on **scaling down** Kubernetes **pods** to orchestrate a clean backup plan. \
 > You should probably try it on a test environment first.
 
 * Install CLI
@@ -38,7 +38,7 @@
   * [optional] `pullImage` secret
     > To get the image from this repository
     ```
-    kubectl create secret docker-registry clustersnap-registry-auth \
+    kubectl create secret docker-registry bkup-registry-auth \
       --docker-server=ghcr.io \
       --docker-username=GITHUB_ACCOUNT \
       --docker-password=GITHUB_PAT \
@@ -46,18 +46,18 @@
     ```
 
   * `config` Secret
-    * Edit `src/templates/config.secret.yaml` with your own config
+    * Edit `templates_install/config.secret.yaml` with your own config
     * Apply
       ```
-      NAMESPACE=YOUR_NAMESPACE envsubst < templates/backup.secret.yaml | kubectl apply -f -
+      NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/config.secret.yaml | kubectl apply -f -
       ```
 
   * `backup-map` ConfigMap
     > Note: this ConfigMap is used to orchestrate the backup. \
     > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it. \
-    > If it already exists, you can read it with `python -m src.master -c KUBECTL_CONTEXT -bm -g` or `kubectl get cm clustersnap-backup-map`
+    > If it already exists, you can read it with `bkup -c KUBECTL_CONTEXT -bm -g` or `kubectl get cm bkup-backup-map`
     ```
-    python -m src.master -c KUBECTL_CONTEXT -bm
+    bkup -c KUBECTL_CONTEXT -bm
     ```
     
 
@@ -66,24 +66,24 @@
 ### Kubernetes
 * Create pod (& required resources such as RBAC etc...)
 ```
-NAMESPACE=YOUR_NAMESPACE envsubst < tests/resources_test.yaml | kubectl apply -f -
+NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/resources_test.yaml | kubectl apply -f -
 ```
 * Wait for it to end...
 
 ### Local CLI
 * Run cluster-wide backup
 ```
-python -m src.master -c KUBECTL_CONTEXT
+bkup -c KUBECTL_CONTEXT
 ```
 
 * Run namespaced backup
 ```
-python -m src.master -c KUBECTL_CONTEXT -n NAMESPACE
+bkup -c KUBECTL_CONTEXT -n NAMESPACE
 ```
 
 * Display help
 ```
-python -m src.master --help
+bkup --help
 ```
 
 
@@ -95,18 +95,18 @@ python -m src.master --help
 
 
 ### ConfigMap `backup-map`
-Clustersnap relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
+bkup relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
 
 The `backup-map` is really simple:
 * consists of listing workloads (Deployments/StatefulSets) and their associated PVC if any
-* must be generated before running Clustersnap jobs
+* must be generated before running bkup jobs
 * can/must be manually modified => The backup-map is pre-gen but some informations are not predictable, any "CHANGEME" values must be replaced
-* stored in namespace of the `Clusternap master pod` (or default namespace if Clustersnap is not running in the cluster)
+* stored in namespace of the `master pod` (or default namespace if bkup is not running in the cluster)
 
 
 #### Example
 ```
-clustersnap-backup-map.yaml: |
+bkup-backup-map.yaml: |
   cluster: example
   namespaces:
   - name: namespace1
@@ -190,7 +190,7 @@ The `backup-cache` ConfigMap is an internal state tracker used during backup exe
 
 ### Secret `config`
 The `config` Secret is the core configuration secret required to operate. It must be created prior to running backup operations and contains remote storage credentials and target metadata:
-* `backup-map-namespace`: *(Optional)* The target namespace where `clustersnap-backup-map` and `clustersnap-backup-cache` are stored.
+* `backup-map-namespace`: *(Optional)* The target namespace where `bkup-backup-map` and `bkup-backup-cache` are stored.
 * `cluster-name`: Name descriptor of the targeted Kubernetes cluster.
 * `storage-address`: Endpoint URL of the remote storage (e.g., `https://<account>.blob.core.windows.net/`).
 * `storage-username`: Storage account username or Access Key.
@@ -235,7 +235,7 @@ tofill
 
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/clustersnap/main/LICENSE.md) for details.
+This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/bkup/main/LICENSE.md) for details.
 
 <br>
 <br>

@@ -8,7 +8,10 @@ from src.utils.stream import is_unix_pipe, GzipStreamer, TarGenerator
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Clustersnap Backup Worker")
+    parser = argparse.ArgumentParser(
+        description="bkup exporter",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=80),
+    )
     parser.add_argument("--path", type=str, required=True, help="Path to backup (directory or UNIX pipe)")
     parser.add_argument("--pvc", type=str, required=True, help="Name of the PVC")
     parser.add_argument("--type", type=str, default=None, choices=["volume", "pg_dump"], help="Type of backup")
@@ -45,21 +48,21 @@ def main():
             storage_address=storage_address,
             storage_username=storage_username,
             storage_password=storage_password,
-            root_path_target=root_path_target
+            root_path_target=root_path_target,
         )
-    
+
     # # AWS/S3
     # elif "s3" in storage_address.lower() or "aws" in storage_address.lower():
     #     # from src.storage.s3 import S3Storage
     #     # storage_provider = S3Storage(storage_address, storage_username, storage_password)
     #     print("error: S3 storage provider is detected but not implemented yet.")
     #     sys.exit(1)
-        
+
     else:
-        print(f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address}). Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net")
+        print(
+            f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address}). Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net"
+        )
         sys.exit(1)
-
-
 
     # ------------------------------
     # BACKUP STREAM EXECUTION
@@ -67,7 +70,7 @@ def main():
     try:
         # Case 1 : path is UNIX pipe (FIFO) from sidecar container
         if is_unix_pipe(args.path) and backup_type == "pg_dump":
-            current_db_file = '/shared/current_db'
+            current_db_file = "/shared/current_db"
             print("info: starting sequential database backup loop over shared UNIX pipe...")
 
             while True:
@@ -75,20 +78,20 @@ def main():
                 while not os.path.exists(current_db_file) or os.path.getsize(current_db_file) == 0:
                     time.sleep(0.2)
 
-                with open(current_db_file, 'r') as f:
+                with open(current_db_file, "r") as f:
                     db_name = f.read().strip()
 
                 # "done" is the end signal used here, it must be echo-ed from the sidecar container
                 if db_name == "done" or not db_name:
                     print("info: sequential backup loop completed. All databases stored.")
-                    # On vide une dernière fois le fichier pour libérer le sidecar
-                    with open(current_db_file, 'w') as f:
+                    # Empty the file one last time to release the sidecar
+                    with open(current_db_file, "w") as f:
                         pass
                     break
 
                 print(f"info: catching dump stream for database '{db_name}' from pipe...")
 
-                # Consumption of the pipe stream for the targetted database
+                # Consumption of the pipe stream for the targeted database
                 with open(args.path, "rb") as pipe_stream:
                     compressed_generator = GzipStreamer(pipe_stream)
 
@@ -97,7 +100,7 @@ def main():
                         path=args.path,
                         data_generator=compressed_generator,
                         backup_type=backup_type,
-                        db_name=db_name
+                        db_name=db_name,
                     )
 
                 if not success:
@@ -105,33 +108,27 @@ def main():
                     sys.exit(1)
 
                 print(f"info: database '{db_name}' successfully uploaded. Signaling sidecar.")
-                # Au lieu de supprimer le fichier, on le vide proprement pour passer sa taille à 0 octet
-                with open(current_db_file, 'w') as f:
+                # Instead of deleting the file, empty it cleanly to set its size to 0 bytes
+                with open(current_db_file, "w") as f:
                     pass
 
                 # Simple timer before next database
                 time.sleep(1)
 
-        # Case 2 : path is a classic directory 
+        # Case 2 : path is a classic directory
         else:
-            current_db_file = '/shared/current_db'
+            current_db_file = "/shared/current_db"
             if is_unix_pipe(args.path):
                 with open(args.path, "rb") as pipe_stream:
                     compressed_generator = GzipStreamer(pipe_stream)
                     success = storage_provider.upload_stream(
-                        pvc_name=args.pvc,
-                        path=args.path,
-                        data_generator=compressed_generator,
-                        backup_type=backup_type
+                        pvc_name=args.pvc, path=args.path, data_generator=compressed_generator, backup_type=backup_type
                     )
             else:
                 print(f"info: detected directory at '{args.path}'. Initiating tar compression stream...")
                 backup_generator = TarGenerator(args.path)
                 success = storage_provider.upload_stream(
-                    pvc_name=args.pvc,
-                    path=args.path,
-                    data_generator=backup_generator,
-                    backup_type=backup_type
+                    pvc_name=args.pvc, path=args.path, data_generator=backup_generator, backup_type=backup_type
                 )
 
             if not success:
@@ -139,10 +136,10 @@ def main():
                 sys.exit(1)
 
             if os.path.exists(current_db_file):
-                with open(current_db_file, 'w') as f:
+                with open(current_db_file, "w") as f:
                     pass
 
-            print(f"info: backup streaming process completed successfully.")
+            print("info: backup streaming process completed successfully.")
 
     except Exception as e:
         print(f"error: backup execution failed: {e}")
