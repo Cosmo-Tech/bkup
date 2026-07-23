@@ -1,5 +1,5 @@
 name: Unit Tests
-run-name: "[unit-tests] ${{ github.ref_name }} / ${{ github.event.head_commit.message }} #${{ github.sha }}"
+run-name: "[units]  branch=${{ github.ref_name }} - ${{ github.event.head_commit.message }}"
 
 on:
   push:

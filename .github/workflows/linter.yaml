@@ -1,5 +1,5 @@
 name: Linter
-run-name: "[linter] ${{ github.ref_name }} / ${{ github.event.head_commit.message }} #${{ github.sha }}"
+run-name: "[linter] branch=${{ github.ref_name }} - ${{ github.event.head_commit.message }}"
 
 on:
   push:
