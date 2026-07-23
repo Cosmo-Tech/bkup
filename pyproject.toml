@@ -12,4 +12,6 @@ select = [
     "F",
     "W",
 ]
-ignore = []
+ignore = [
+    "E501",
+]

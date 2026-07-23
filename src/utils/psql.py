@@ -68,6 +68,9 @@ def stream_individual_dumps(storage_provider, pvc_name):
                 data_generator=process.stdout
             )
 
+            if not success:
+                print(f"warn: failed to upload database {db}")
+
             process.wait()
             if process.returncode != 0:
                 print(f"Error while dumping {db}: {process.stderr.read().decode()}")
