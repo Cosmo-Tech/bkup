@@ -69,8 +69,8 @@
 ### Kubernetes
 * Run master
   * from Cronjob
-    > :information_source: The pod will shows up only at given cron expression \
-    > You can configure any cron expression: https://crontab.guru/
+    > :information_source: The pod will shows up only at the time period defined in the Cron expression \
+    > You can configure any cron expression (a cool helper: https://crontab.guru/)
     * Sunday at 23:59
       ```
       NAMESPACE=YOUR_NAMESPACE CRON='59 23 * * 7' envsubst < templates_install/master.cronjob.yaml | kubectl apply -f -
@@ -113,7 +113,7 @@ bkup --help
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
 * `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
 * `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
-* `utils/`      => a bunch of helpers without classes
+* `utils/`      => a bunch of helpers functions
 
 
 ### ConfigMap `backup-map`
