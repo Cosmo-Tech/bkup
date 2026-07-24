@@ -36,9 +36,7 @@ def test_scale_replicas_statefulset(k8s_base):
     k8s_base.scale_replicas("statefulset", "my-db", 0)
 
     # Ensure the patch was sent with the correct payload
-    k8s_base.apps_v1.patch_namespaced_stateful_set.assert_called_once_with(
-        name="my-db", namespace="test-ns", body={"spec": {"replicas": 0}}
-    )
+    k8s_base.apps_v1.patch_namespaced_stateful_set.assert_called_once_with(name="my-db", namespace="test-ns", body={"spec": {"replicas": 0}})
 
 
 def test_get_job_name_truncation(k8s_base):

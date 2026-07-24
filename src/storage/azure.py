@@ -23,9 +23,7 @@ class AzureStorage(Storage):
         except Exception as e:
             raise RuntimeError(f"Critical: Failed to verify/create Azure container: {e}")
 
-    def upload_stream(
-        self, pvc_name: str, path: str, data_generator, backup_type: str = None, db_name: str = None
-    ) -> bool:
+    def upload_stream(self, pvc_name: str, path: str, data_generator, backup_type: str = None, db_name: str = None) -> bool:
         date_str = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 
         # Layout: <backup-type>/pvc_name/pvc_name-timestamp.tar.gz

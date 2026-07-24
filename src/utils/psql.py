@@ -62,9 +62,7 @@ def stream_individual_dumps(storage_provider, pvc_name):
 
             process = subprocess.Popen(shlex.split(dump_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            success = storage_provider.upload_stream(
-                pvc_name=f"{pvc_name}-{db}", path=f"/{db}.dump", data_generator=process.stdout
-            )
+            success = storage_provider.upload_stream(pvc_name=f"{pvc_name}-{db}", path=f"/{db}.dump", data_generator=process.stdout)
 
             if not success:
                 print(f"warn: failed to upload database {db}")

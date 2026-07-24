@@ -34,9 +34,7 @@ def test_resolve_backup_type_from_map(mock_get_backup_map):
     mock_kube = MagicMock()
 
     # Mock the internal call to return a fake backup-map structure
-    mock_get_backup_map.return_value = {
-        "namespaces": [{"name": "my-ns", "claims": [{"name": "my-pvc", "backup-type": "pg_dump"}]}]
-    }
+    mock_get_backup_map.return_value = {"namespaces": [{"name": "my-ns", "claims": [{"name": "my-pvc", "backup-type": "pg_dump"}]}]}
 
     # Must find the correct backup type for existing PVC
     b_type = resolve_backup_type_from_map(mock_kube, "my-pvc", "my-ns")

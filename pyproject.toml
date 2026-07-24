@@ -24,11 +24,23 @@ dependencies = [
 bkup = "src.master:main"
 
 
+[tool.setuptools.packages.find]
+where = ["."]
+
+
 [tool.ruff]
-line-length = 120
+line-length = 180
 exclude = [ ".git", ".venv", "__pycache__" ]
 
 
 [tool.ruff.lint]
 select = [ "E", "F", "W" ]
-ignore = [ "E501" ] # ignore too long lines
+ignore = [ 
+    "E501", # ignore too long lines
+    "W293"  # ignore blank lines
+]
+
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "lf"

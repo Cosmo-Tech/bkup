@@ -32,11 +32,7 @@ def save_backup_cache(kube, cache_data: dict, master_namespace: str):
     orig_ns = kube.namespace
     try:
         kube.namespace = master_namespace
-        kube.save_to_configmap(
-            name="bkup-backup-cache",
-            namespace=master_namespace,
-            data={"bkup-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)},
-        )
+        kube.save_to_configmap(name="bkup-backup-cache", namespace=master_namespace, data={"bkup-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)})
     finally:
         kube.namespace = orig_ns
 

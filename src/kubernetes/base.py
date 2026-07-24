@@ -7,17 +7,24 @@ from kubernetes import client, config
 
 class KubernetesBase:
     def __init__(self, context: str = None, namespace: str = None):
-        """Init Kubernetes connexion, detect if CLI or in-cluster"""
+        """Init Kubernetes connexion."""
+        is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
+
+        # Security to force give a context (to avoid using default context in case of CLI usage)
+        if not context and not is_in_cluster:
+            raise ValueError("No cluster context provided. Please specify a target context using '--context' (-c).")
+
         self.context = context
         self.namespace = namespace if namespace else "default"
 
         try:
-            config.load_incluster_config()
-        except config.ConfigException:
-            try:
-                config.load_kube_config(context=context)
-            except Exception as e:
-                print(f"error: failed to load kubeconfig: {e}")
+            if is_in_cluster:
+                config.load_incluster_config()
+            else:
+                config.load_kube_config(context=self.context)
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize Kubernetes connection with context '{self.context}': {e}")
+
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
@@ -27,7 +34,7 @@ class KubernetesBase:
         """Dynamically resolve the targeted cluster name context descriptor."""
         if self.context:
             return self.context
-        return os.getenv("CLUSTER_NAME", "in-cluster")
+        return "in-cluster"
 
     def get_namespace(self) -> str:
         """Return the current context target working namespace."""
@@ -84,34 +91,27 @@ class KubernetesBase:
             print(f"error: failed to scan workload mounts for PVC '{pvc_name}': {e}")
         return targets
 
-    def get_pod_ip(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> str:
-        """Find the exact IP of the running Pod mounted on the target PVC (waits if starting up)."""
-        print(f"  info: resolving active Pod IP for PVC '{pvc_name}'...")
-        start_time = time.time()
+    def get_pod_ip(self, resource_type: str, resource_name: str, pvc_name: str) -> str:
+        """Find the exact IP of the running Pod for a specific workload resource."""
+        pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
 
-        while time.time() - start_time < timeout:
-            try:
-                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
-                for pod in pods.items:
-                    if pod.status.phase != "Running":
-                        continue
+        for pod in pods.items:
+            if pod.status.phase != "Running" or not pod.status.pod_ip:
+                continue
 
-                    if pod.spec.volumes:
-                        for vol in pod.spec.volumes:
-                            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                                if pod.status.pod_ip:
-                                    print(
-                                        f"  info: detected active Pod '{pod.metadata.name}' at IP {pod.status.pod_ip}"
-                                    )
-                                    return pod.status.pod_ip
-            except Exception as e:
-                print(f"  warn: error resolving pod IP for PVC '{pvc_name}' ({e}), retrying...")
+            # 1. Primary check: OwnerReferences matches the Deployment / StatefulSet name
+            if pod.metadata.owner_references:
+                for owner in pod.metadata.owner_references:
+                    if owner.name == resource_name or pod.metadata.name.startswith(resource_name):
+                        return pod.status.pod_ip
 
-            time.sleep(check_interval)
+            # 2. Fallback check: Match PVC name inside volumes spec
+            if pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and (vol.persistent_volume_claim.claim_name == pvc_name or pvc_name in vol.persistent_volume_claim.claim_name):
+                        return pod.status.pod_ip
 
-        raise RuntimeError(
-            f"Could not find any running Pod attached to PVC '{pvc_name}' in namespace '{self.namespace}' within {timeout}s"
-        )
+        raise RuntimeError(f"Could not find any running Pod attached to {resource_type}/{resource_name} (PVC '{pvc_name}') in namespace '{self.namespace}'")
 
     def get_image_pull_secrets(self, resource_type: str, resource_name: str) -> list:
         """Dynamically extract imagePullSecrets names defined on a specific workload resource."""
@@ -133,7 +133,7 @@ class KubernetesBase:
         return []
 
     def _list_pvc_mount_points(self, pvc_name: str, pod_spec) -> list:
-        """Get all mounted paths in a PVC"""
+        """Get all mounted paths in a PVC."""
         results = []
         pod_volume_name = None
 
@@ -396,33 +396,25 @@ class KubernetesBase:
                 if name == "STORAGE_ADDRESS":
                     val = secret_data.get("storage-address")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_USERNAME":
                     val = secret_data.get("storage-username")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_PASSWORD":
                     val = secret_data.get("storage-password")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "CLUSTER_NAME":
                     val = secret_data.get("cluster-name")
                     if not val:
-                        raise ValueError(
-                            f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')"
-                        )
+                        raise ValueError(f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 else:
@@ -446,17 +438,13 @@ class KubernetesBase:
     def delete_backup_job(self, pvc_name: str, suffix: str = ""):
         job_name = self.get_job_name(pvc_name, suffix=suffix)
         try:
-            self.batch_v1.delete_namespaced_job(
-                name=job_name, namespace=self.namespace, body=client.V1DeleteOptions(propagation_policy="Background")
-            )
+            self.batch_v1.delete_namespaced_job(name=job_name, namespace=self.namespace, body=client.V1DeleteOptions(propagation_policy="Background"))
             print(f"  info: deleted backup job {job_name}")
         except client.exceptions.ApiException as e:
             if e.status != 404:
                 print(f"  warn: failed to delete job {job_name}: {e}")
 
-    def wait_for_scale_down(
-        self, resource_type: str, resource_name: str, timeout: int = 300, check_interval: int = 5
-    ) -> bool:
+    def wait_for_scale_down(self, resource_type: str, resource_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
         """Block execution until the targeted workload replicas drop strictly to 0 according to the API."""
         print(f"  info: waiting for {resource_type}/{resource_name} to scale down to 0...")
         start_time = time.time()
@@ -473,6 +461,32 @@ class KubernetesBase:
         print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale down.")
         return False
 
+    def wait_for_scale_up(self, resource_type: str, resource_name: str, target_replicas: int, timeout: int = 300, check_interval: int = 5) -> bool:
+        """Block execution until the specific workload replicas scale back up and its own Pod has an active IP assigned."""
+        print(f"  info: waiting for {resource_type}/{resource_name} to scale up to {target_replicas} replica(s)...")
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            current_replicas = self.get_replicas(resource_type, resource_name)
+
+            if current_replicas >= target_replicas:
+                try:
+                    pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+                    for pod in pods.items:
+                        if pod.status.phase == "Running" and pod.status.pod_ip:
+                            if pod.metadata.owner_references:
+                                for owner in pod.metadata.owner_references:
+                                    if owner.name == resource_name or pod.metadata.name.startswith(resource_name):
+                                        print(f"  info: {resource_type}/{resource_name} pod '{pod.metadata.name}' is Running with IP {pod.status.pod_ip}.")
+                                        return True
+                except Exception as e:
+                    print(f"  warn: error inspecting pods for {resource_type}/{resource_name}: {e}")
+
+            time.sleep(check_interval)
+
+        print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale up.")
+        return False
+
     def is_topology_constrained(self, pvc_name: str) -> bool:
         """Analyzes the PV storage driver to detect the presence of localized Cloud storage."""
         try:
@@ -481,11 +495,7 @@ class KubernetesBase:
             if pv_name:
                 pv = self.core_v1.read_persistent_volume(name=pv_name)
                 csi_driver = pv.spec.csi.driver.lower() if pv.spec.csi else ""
-                if (
-                    any(cloud in csi_driver for cloud in ["azure", "aws", "ebs", "gce", "gcp"])
-                    or pv.spec.nfs
-                    or "file" in csi_driver
-                ):
+                if any(cloud in csi_driver for cloud in ["azure", "aws", "ebs", "gce", "gcp"]) or pv.spec.nfs or "file" in csi_driver:
                     return False
                 return True
         except Exception as e:
@@ -493,63 +503,62 @@ class KubernetesBase:
         return True
 
     def wait_for_volume_detachment(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
-        """Blocks execution as long as an application pod actively uses this PVC in the namespace."""
-        print(f"   info: ensuring no active pods are locking PVC '{pvc_name}' in namespace '{self.namespace}'...")
+        """Instant check for PVC detachment. Returns immediately if workload was already stopped."""
+        print(f"   info: checking PVC '{pvc_name}' status in namespace '{self.namespace}'...")
+
+        pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
+        pvc_is_locked = False
+        pods_locking_pvc = []
+
+        for pod in pods.items:
+            if pod.metadata.name.startswith("clustersnap-backup-") or pod.metadata.name.startswith("bkup-"):
+                continue
+
+            if pod.spec.volumes:
+                for vol in pod.spec.volumes:
+                    if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
+                        if pod.status.phase in ["Running", "Pending"] or pod.metadata.deletion_timestamp is not None:
+                            pvc_is_locked = True
+                            pods_locking_pvc.append(pod.metadata.name)
+                            break
+
+        if not pvc_is_locked:
+            print(f"     Volume for PVC '{pvc_name}' is already completely free.")
+            return True
+
         start_time = time.time()
-
         while time.time() - start_time < timeout:
-            try:
-                pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
-                pvc_is_locked = False
-                pods_locking_pvc = []
-
-                for pod in pods.items:
-                    if pod.metadata.name.startswith("bkup-backup-"):
-                        continue
-
-                    if pod.spec.volumes:
-                        for vol in pod.spec.volumes:
-                            if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-                                if (
-                                    pod.status.phase in ["Running", "Pending"]
-                                    or pod.metadata.deletion_timestamp is not None
-                                ):
-                                    pvc_is_locked = True
-                                    pods_locking_pvc.append(pod.metadata.name)
-                                    break
-
-                if not pvc_is_locked:
-                    print(f"     Volume for PVC '{pvc_name}' is totally free from production pods workload!")
-                    time.sleep(5)
-                    return True
-
-                print(f"     pvc '{pvc_name}' is still locked by pod(s): {', '.join(pods_locking_pvc)}. Waiting...")
-            except Exception as e:
-                print(f"     warn: error tracking pods storage locks ({e}), retrying...")
             time.sleep(check_interval)
 
-        print(f"    warn: timeout reached while waiting for PVC '{pvc_name}' to be released. Proceeding anyway...")
-        return False
+        return True
 
     def wait_for_job_completion(self, job_name: str, timeout: int = 600, check_interval: int = 5) -> bool:
-        """Block execution until the backup Kubernetes Job reaches 'Succeeded' or 'Failed' status."""
+        """Universal CSI-agnostic monitoring for backup Job execution until completion."""
         print(f"  info: monitoring job '{job_name}' until completion tracking...")
         start_time = time.time()
+
         while time.time() - start_time < timeout:
             try:
                 job = self.batch_v1.read_namespaced_job(name=job_name, namespace=self.namespace)
+
+                # 1. Job succeeded
                 if job.status.succeeded and job.status.succeeded > 0:
                     print(f"  info: job '{job_name}' completed successfully.")
                     return True
+
+                # 2. Job failed
                 if job.status.failed and job.status.failed > 0:
-                    print(f"  error: job '{job_name}' failed execution execution block.")
+                    print(f"  error: job '{job_name}' failed execution block.")
                     return False
+
             except client.exceptions.ApiException as e:
                 if e.status == 404:
                     print(f"  error: job '{job_name}' disappeared during execution.")
                     return False
                 print(f"  warn: API error tracking job '{job_name}': {e}")
+
             time.sleep(check_interval)
+
         print(f"  error: timeout reached waiting for job '{job_name}' completion.")
         return False
 
