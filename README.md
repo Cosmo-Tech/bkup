@@ -35,7 +35,7 @@
     ```
 
 * Create Kubernetes objects
-  * [optional] `pullImage` secret
+  * [optional] Create `pullImage` secret
     > To get the image from this repository
     ```
     kubectl create secret docker-registry bkup-registry-auth \
@@ -44,15 +44,20 @@
       --docker-password=GITHUB_PAT \
       --docker-email=GITHUB_ACCOUNT
     ```
+  
+  * Create RBAC manifests
+    ```
+    NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/roles.yaml | kubectl apply -f -
+    ```
 
-  * `config` Secret
+  * Create `config` Secret
     * Edit `templates_install/config.secret.yaml` with your own config
     * Apply
       ```
       NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/config.secret.yaml | kubectl apply -f -
       ```
 
-  * `backup-map` ConfigMap
+  * Create `backup-map` ConfigMap
     > Note: this ConfigMap is used to orchestrate the backup. \
     > You can manually edit it to customize the backup behaviors, the command below is just a quick way to create it. \
     > If it already exists, you can read it with `bkup -c KUBECTL_CONTEXT -bm -g` or `kubectl get cm bkup-backup-map`
@@ -62,15 +67,31 @@
     
 
 ## Usage
-> Ensure required secrets & configmap are created
+> Ensure required manifests are created
 ### Kubernetes
-* Create pod (& required resources such as RBAC etc...)
-```
-NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/resources_test.yaml | kubectl apply -f -
-```
+* Run master
+  * from Cronjob
+    > :info: The pod will shows up only at given cron expression \
+    > You can configure any cron expression: https://crontab.guru/
+    * Sunday at 23:59
+      ```
+      NAMESPACE=YOUR_NAMESPACE CRON='59 23 * * 7' envsubst < templates_install/master.cronjob.yaml | kubectl apply -f -
+      ```
+    * every minutes
+      ```
+      NAMESPACE=YOUR_NAMESPACE CRON='* * * * *' envsubst < templates_install/master.cronjob.yaml | kubectl apply -f -
+      ```
+  * from single Pod
+    > :info: Useful in case of test/one-shot backup
+    ```
+    NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/master.pod.yaml | kubectl apply -f -
+    ```
+
 * Wait for it to end...
 
 ### Local CLI
+> :info: No master pod will be created \
+> Useful in case of test/one-shot backup
 * Run cluster-wide backup
 ```
 bkup -c KUBECTL_CONTEXT
@@ -88,10 +109,13 @@ bkup --help
 
 
 ## Developpers
-### Architecture
+### Code base
 * `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
 * `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & sync it to remote storage)
 * `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
+* `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
+* `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
+* `utils/`      => a bunch of helpers without classes
 
 
 ### ConfigMap `backup-map`
@@ -102,7 +126,6 @@ The `backup-map` is really simple:
 * must be generated before running bkup jobs
 * can/must be manually modified => The backup-map is pre-gen but some informations are not predictable, any "CHANGEME" values must be replaced
 * stored in namespace of the `master pod` (or default namespace if bkup is not running in the cluster)
-
 
 #### Example
 ```

@@ -37,7 +37,7 @@ exclude = [ ".git", ".venv", "__pycache__" ]
 select = [ "E", "F", "W" ]
 ignore = [ 
     "E501", # ignore too long lines
-    "W293"
+    "W293"  # ignore blank lines
 ]
 
 
