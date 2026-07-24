@@ -47,7 +47,7 @@
   
   * Create RBAC manifests
     ```
-    NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/roles.yaml | kubectl apply -f -
+    NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/rbac.yaml | kubectl apply -f -
     ```
 
   * Create `config` Secret
