@@ -69,7 +69,7 @@
 ### Kubernetes
 * Run master
   * from Cronjob
-    > :info: The pod will shows up only at given cron expression \
+    > :information_source: The pod will shows up only at given cron expression \
     > You can configure any cron expression: https://crontab.guru/
     * Sunday at 23:59
       ```
@@ -80,7 +80,7 @@
       NAMESPACE=YOUR_NAMESPACE CRON='* * * * *' envsubst < templates_install/master.cronjob.yaml | kubectl apply -f -
       ```
   * from single Pod
-    > :info: Useful in case of test/one-shot backup
+    > :information_source: Useful in case of test/one-shot backup
     ```
     NAMESPACE=YOUR_NAMESPACE envsubst < templates_install/master.pod.yaml | kubectl apply -f -
     ```
@@ -88,7 +88,7 @@
 * Wait for it to end...
 
 ### Local CLI
-> :info: No master pod will be created \
+> :information_source: No master pod will be created \
 > Useful in case of test/one-shot backup
 * Run cluster-wide backup
 ```
