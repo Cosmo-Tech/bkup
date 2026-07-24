@@ -23,9 +23,7 @@ class PostgresBackupJob(KubernetesBase):
             raise ValueError("workload_type, workload_name, and target_ip are required for PostgresBackupJob.")
 
         postgres_image = self.get_workload_image(workload_type, workload_name)
-        dumper_env_list, original_env_from = self._build_strict_postgres_job_env(
-            pvc_name=pvc_name, target_ip=target_ip, master_ns=master_ns
-        )
+        dumper_env_list, original_env_from = self._build_strict_postgres_job_env(pvc_name=pvc_name, target_ip=target_ip, master_ns=master_ns)
 
         replacements = {
             "JOB_NAME": self.get_job_name(pvc_name),
@@ -40,13 +38,7 @@ class PostgresBackupJob(KubernetesBase):
             "AFFINITY_DICT": {
                 "nodeAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": {
-                        "nodeSelectorTerms": [
-                            {
-                                "matchExpressions": [
-                                    {"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}
-                                ]
-                            }
-                        ]
+                        "nodeSelectorTerms": [{"matchExpressions": [{"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}]}]
                     }
                 }
             }
@@ -101,9 +93,7 @@ class PostgresBackupJob(KubernetesBase):
             print(f"  warn: failed to read postgresql config from backup-map ({e})")
 
         if "password" in pg_map_config:
-            raise ValueError(
-                f"Security Error: Plain-text 'password' key is forbidden in backup-map for PVC '{pvc_name}'. Use 'password-secret'."
-            )
+            raise ValueError(f"Security Error: Plain-text 'password' key is forbidden in backup-map for PVC '{pvc_name}'. Use 'password-secret'.")
 
         dumper_env_list = []
 
@@ -134,8 +124,7 @@ class PostgresBackupJob(KubernetesBase):
 
         if not pass_val:
             raise ValueError(
-                f"PostgreSQL 'password-secret' configuration missing or invalid in backup-map for PVC '{pvc_name}'. "
-                f"Format required: password-secret: {{ name: 'secret-name', key: 'password-key' }}"
+                f"PostgreSQL 'password-secret' configuration missing or invalid in backup-map for PVC '{pvc_name}'. Format required: password-secret: {{ name: 'secret-name', key: 'password-key' }}"
             )
 
         dumper_env_list.append({"name": "PGPASSWORD", "value": pass_val})

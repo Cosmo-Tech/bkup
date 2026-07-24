@@ -22,13 +22,7 @@ class VolumeBackupJob(KubernetesBase):
             "AFFINITY_DICT": {
                 "nodeAffinity": {
                     "requiredDuringSchedulingIgnoredDuringExecution": {
-                        "nodeSelectorTerms": [
-                            {
-                                "matchExpressions": [
-                                    {"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}
-                                ]
-                            }
-                        ]
+                        "nodeSelectorTerms": [{"matchExpressions": [{"key": "kubernetes.io/hostname", "operator": "In", "values": [node_name]}]}]
                     }
                 }
             }

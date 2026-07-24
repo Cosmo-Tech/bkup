@@ -2,11 +2,7 @@ from src.utils.backup_cache import find_cached_replicas, update_cached_replicas,
 
 
 def test_find_cached_replicas():
-    cache = {
-        "namespaces": [
-            {"name": "keycloak", "resources": [{"type": "StatefulSet", "name": "keycloak-postgresql", "replicas": 3}]}
-        ]
-    }
+    cache = {"namespaces": [{"name": "keycloak", "resources": [{"type": "StatefulSet", "name": "keycloak-postgresql", "replicas": 3}]}]}
 
     # Must find the existing resource
     assert find_cached_replicas(cache, "keycloak", "StatefulSet", "keycloak-postgresql") == 3

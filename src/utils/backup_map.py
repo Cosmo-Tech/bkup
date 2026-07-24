@@ -69,7 +69,11 @@ def backup_map_scanner(kube, target_namespaces: list) -> dict:
             if mounts:
                 for m in mounts:
                     pvc_data["mounts"].append(
-                        {"container": m["container_name"], "path": m["mount_path"], "resource": m["resource"]}
+                        {
+                            "container": m["container_name"],
+                            "path": m["mount_path"],
+                            "resource": m["resource"],
+                        }
                     )
             else:
                 pvc_data["mounts"] = mounts

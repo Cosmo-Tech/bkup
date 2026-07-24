@@ -38,9 +38,7 @@ def test_azure_upload_stream_success(mock_blob_client_class):
     generator = [b"chunk1", b"chunk2"]
 
     # Execute the upload
-    success = storage.upload_stream(
-        pvc_name="my-pvc", path="/fake/path", data_generator=generator, backup_type="volume"
-    )
+    success = storage.upload_stream(pvc_name="my-pvc", path="/fake/path", data_generator=generator, backup_type="volume")
 
     assert success is True
     # Verify that the native Azure upload_blob function was called with our parameters

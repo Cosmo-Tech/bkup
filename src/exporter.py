@@ -60,7 +60,9 @@ def main():
 
     else:
         print(
-            f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address}). Please ensure the config secret contains the right URL, because the remote storage name will be automatically calculated from it. Example: https://example.blob.core.windows.net"
+            f"error: unable to detect storage provider from STORAGE_ADDRESS ({storage_address})."
+            "Please ensure the config secret contains the right URL, because the remote storage name"
+            "will be automatically calculated from it. Example: https://example.blob.core.windows.net"
         )
         sys.exit(1)
 
@@ -121,15 +123,11 @@ def main():
             if is_unix_pipe(args.path):
                 with open(args.path, "rb") as pipe_stream:
                     compressed_generator = GzipStreamer(pipe_stream)
-                    success = storage_provider.upload_stream(
-                        pvc_name=args.pvc, path=args.path, data_generator=compressed_generator, backup_type=backup_type
-                    )
+                    success = storage_provider.upload_stream(pvc_name=args.pvc, path=args.path, data_generator=compressed_generator, backup_type=backup_type)
             else:
                 print(f"info: detected directory at '{args.path}'. Initiating tar compression stream...")
                 backup_generator = TarGenerator(args.path)
-                success = storage_provider.upload_stream(
-                    pvc_name=args.pvc, path=args.path, data_generator=backup_generator, backup_type=backup_type
-                )
+                success = storage_provider.upload_stream(pvc_name=args.pvc, path=args.path, data_generator=backup_generator, backup_type=backup_type)
 
             if not success:
                 print("error: storage provider failed to upload volume stream.")
