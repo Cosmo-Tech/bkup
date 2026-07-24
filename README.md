@@ -27,11 +27,9 @@
     python -m .venv
     source .venv/bin/activate
     ```
-
-  * Install dependencies
+  * Install
     ```
-    pip install --upgrade pip
-    pip install -r requirements.txt
+    pip install .
     ```
 
 * Create Kubernetes objects
