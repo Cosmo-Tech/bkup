@@ -1,7 +1,6 @@
 import sys
 import argparse
 import signal
-import os
 import yaml
 
 from src.kubernetes.job_volume import VolumeBackupJob
