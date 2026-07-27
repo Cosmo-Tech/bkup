@@ -150,9 +150,9 @@ def run_backup_job(cluster_context: str, namespace: str):
 
     active_nodes = get_active_cluster_nodes(kube)
 
-    starting_time = general_helper.now()
+    starting_time_ns = general_helper.now()
     print("\n\n==================================================")
-    print(f"===> Starting namespace : {namespace} | datetime: {starting_time}")
+    print(f"===> Starting namespace : {namespace} | datetime: {starting_time_ns}")
 
     # ==================================================
     # PHASE 0 : CLEANUP OLD JOBS
@@ -339,8 +339,8 @@ def run_backup_job(cluster_context: str, namespace: str):
             print("=> Executing safety restoration check on production workloads...")
             restore_workloads_from_state(kube, master_ns, backup_workloads)
 
-    finished_time = general_helper.now()
-    print(f"\n===> Finished namespace : {namespace} | datetime: {finished_time} | duration: {general_helper.datetime_difference(start_time=starting_time, end_time=finished_time)}")
+    finished_time_ns = general_helper.now()
+    print(f"\n===> Finished namespace : {namespace} | datetime: {finished_time_ns} | duration: {general_helper.datetime_difference(starting_time_ns, finished_time_ns)}")
     print("==================================================\n\n")
 
 
@@ -404,7 +404,7 @@ def main():
             print("hint: Generate and apply one first using 'bkup -bm -a'")
             sys.exit(1)
 
-        print(yaml.dump(saved_map, sort_keys=False, default_flow_style=False))
+        print(f"{yaml.dump(saved_map, sort_keys=False, default_flow_style=False)}\n")
 
         # If a single namespace is targeted via -n, execute only this one
         if namespace_input:
@@ -412,9 +412,17 @@ def main():
         else:
             target_namespaces = kube.list_namespaces()
 
-        for ns in target_namespaces:
+        starting_time_job = general_helper.now()
+        print(f"info: Starting backup job at {starting_time_job}")
+
+        for ns in target_namespaces:        
             kube.namespace = ns
             run_backup_job(cluster_context, namespace=ns)
+
+        finished_time_job = general_helper.now()
+        print(f"info: Finished backup job at {finished_time_job}")
+        print(f"info: Full job duration is {general_helper.datetime_difference(start_time=starting_time_job, end_time=general_helper.now())}")
+
 
     elif args.backup_map:
         # Incompatibility: -g cannot be combined with -p or -a
