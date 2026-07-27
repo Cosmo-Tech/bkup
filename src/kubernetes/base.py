@@ -292,11 +292,11 @@ class KubernetesBase:
         try:
             self.core_v1.read_namespaced_config_map(name=name, namespace=namespace)
             self.core_v1.patch_namespaced_config_map(name=name, namespace=namespace, body=body)
-            print(f"  info: Backup-map successfully updated in {namespace}/{name}")
+            print(f"  info: ConfigMap '{namespace}/{name}' successfully updated")
         except client.exceptions.ApiException as e:
             if e.status == 404:
                 self.core_v1.create_namespaced_config_map(namespace=namespace, body=body)
-                print(f"  info: Backup-map successfully created in {namespace}/{name}")
+                print(f"  info: ConfigMap '{namespace}/{name}' successfully created")
             else:
                 print(f"error: Failed to save ConfigMap {name}: {e}")
                 raise e
