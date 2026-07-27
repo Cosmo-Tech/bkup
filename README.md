@@ -211,25 +211,39 @@ The `backup-cache` ConfigMap is an internal state tracker used during backup exe
 
 ### Secret `config`
 The `config` Secret is the core configuration secret required to operate. It must be created prior to running backup operations and contains remote storage credentials and target metadata:
-* `backup-map-namespace`: *(Optional)* The target namespace where `bkup-backup-map` and `bkup-backup-cache` are stored.
-* `cluster-name`: Name descriptor of the targeted Kubernetes cluster.
-* `storage-address`: Endpoint URL of the remote storage (e.g., `https://<account>.blob.core.windows.net/`).
-* `storage-username`: Storage account username or Access Key.
-* `storage-password`: Storage account password or Secret Access Key.
+* `backup-map-namespace`: *(Optional)* The target namespace where `bkup-backup-map` and `bkup-backup-cache` are stored
+* `cluster-name`: Name descriptor of the targeted Kubernetes cluster
+* `storage-address`: Endpoint URL of the remote storage (e.g., `https://<account>.blob.core.windows.net/`)
+* `storage-username`: Storage account username
+* `storage-password`: Storage account password
+
+#### How to configure for Azure
+* Go to Azure > Storage Accounts > *<your Storage Account>*
+  * `storage-address`  = https://`STORAGE_ACCOUNT_NAME`.blob.core.windows.net/
+  * `storage-username` = `STORAGE_ACCOUNT_NAME`
+  * `storage-password` = Go to **Access Keys** > copy/paste one of the Key
+
+#### How to configure for S3
+* tofill
+
+
 ### Workflows
 #### Volumes
 * Run a Kubernetes job to dump content of PVC mount points
 ##### Export
 
 ```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Assessment: 1. Assessment
-    Assessment --> WaitRelease: 2. Scale to 0 & Cache
-    WaitRelease --> BackupJob: 3. Wait PVC Release
-    BackupJob --> StreamUpload: 4. Trigger Backup Job
-    StreamUpload --> Restoration: 5. Tar.gz Stream to Storage
-    Restoration --> [*]: 6. Restore Replicas
+flowchart TD
+    A[Read backup-map]
+    --> B[for each backup-map namespace]
+    --> C[PVC/pods assessment]
+    --> D[Store workload in backup-cache]
+    D --> E{replicas ?}
+    E -->|>0| F[Scale each to 0]
+    E -->|=0| G[Keep as it is]
+    F --> G[volume.tar.gz stream to Remote Storage]
+    G --> H[wait for end]
+    H --> I[restore replicas from backup-cache]
 ```
 
 ##### Import
@@ -241,14 +255,17 @@ tofill
 ##### Export
 
 ```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Assessment: 1. Assessment
-    Assessment --> SidecarJob: 2. Keep Replicas >0
-    SidecarJob --> UnixPipe: 3. Trigger Dumper+Worker Job
-    UnixPipe --> StreamUpload: 4. pg_dump to FIFO Pipe
-    StreamUpload --> Cleanup: 5. Compress & Upload .sql.gz
-    Cleanup --> [*]: 6. Purge Backup Jobs
+flowchart TD
+    A[Read backup-map]
+    --> B[for each backup-map namespace]
+    --> C[PVC/pods assessment]
+    --> D[Store workload in backup-cache]
+    D --> E{replicas ?}
+    E -->|=0| F[Scale each to 1]
+    E -->|>0| G[Keep as it is]
+    F --> G[pg_dump.sql.gz stream to Remote Storage]
+    G --> H[wait for end]
+    H --> I[restore replicas from backup-cache]
 ```
 
 ##### Import
