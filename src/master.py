@@ -119,26 +119,33 @@ def run_backup_job(cluster_context: str, namespace: str):
     kube = VolumeBackupJob(context=cluster_context, namespace=namespace)
     kube_client_sigkill = kube
 
-    pvcs = kube.list_pvc()
+    master_ns = get_secret_config_namespace(kube)
 
-    # Skip if no PVC
-    if not pvcs:
+    # --------------------------------------------------
+    # STRICT BACKUP-MAP CHECK
+    # --------------------------------------------------
+    ns_claims_entries = []
+    backup_map_config = bpm.get_backup_map(kube, master_ns=master_ns)
+    
+    if isinstance(backup_map_config, dict) and "namespaces" in backup_map_config:
+        for ns_entry in backup_map_config.get("namespaces", []):
+            if ns_entry.get("name") == namespace:
+                ns_claims_entries = ns_entry.get("claims", []) or []
+                break
+
+    if not ns_claims_entries:
+        print(f"info: No claims configured in backup-map for namespace '{namespace}' (or backup-map missing). Skipping backup.")
         return
 
-    master_ns = get_secret_config_namespace(kube)
-    active_nodes = get_active_cluster_nodes(kube)
+    # List PVCs configured in backup-map
+    configured_pvc_names = {claim.get("name") for claim in ns_claims_entries if claim.get("name")}
+    
+    pvcs = [p for p in kube.list_pvc() if p["name"] in configured_pvc_names]
+    if not pvcs:
+        print(f"info: No matching PVCs found in cluster for configured claims in namespace '{namespace}'. Skipping.")
+        return
 
-    # Fetch backup-map ConfigMap for current namespace claims definition
-    ns_claims_entries = []
-    try:
-        backup_map_config = bpm.get_backup_map(kube, master_ns=master_ns)
-        if isinstance(backup_map_config, dict) and "namespaces" in backup_map_config:
-            for ns_entry in backup_map_config.get("namespaces", []):
-                if ns_entry.get("name") == namespace:
-                    ns_claims_entries = ns_entry.get("claims", []) or []
-                    break
-    except Exception as e:
-        print(f"  warn: could not load backup-map claims for namespace '{namespace}': {e}")
+    active_nodes = get_active_cluster_nodes(kube)
 
     print("\n==================================================")
     print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
@@ -323,8 +330,9 @@ def run_backup_job(cluster_context: str, namespace: str):
         # ==================================================
         # PHASE 4 : AUTOMATIC RESTORATION (CRASH PROOF)
         # ==================================================
-        print("\nPHASE 4: Executing safety restoration check on production workloads...")
-        restore_workloads_from_state(kube, master_ns, backup_workloads)
+        if backup_workloads:
+            print("\nPHASE 4: Executing safety restoration check on production workloads...")
+            restore_workloads_from_state(kube, master_ns, backup_workloads)
 
     print("\n==================================================")
     print(f" BACKUP PROCESS CONCLUDED FOR NAMESPACE {namespace}")
@@ -383,10 +391,11 @@ def main():
 
     if args.job:
         kube.namespace = master_ns
-        try:
-            bpm.get_backup_map(kube, master_ns=master_ns)
-        except Exception as e:
-            print(f"error: could not retrieve 'bkup-backup-map' ConfigMap in namespace '{master_ns}': {e}")
+        
+        # Verify ConfigMap existence before processing
+        saved_map = bpm.get_backup_map(kube, master_ns=master_ns)
+        if not saved_map or not saved_map.get("namespaces"):
+            print(f"error: ConfigMap 'bkup-backup-map' is missing or empty in namespace '{master_ns}'.")
             print("hint: generate and apply one first using 'bkup -bm -a'")
             sys.exit(1)
 

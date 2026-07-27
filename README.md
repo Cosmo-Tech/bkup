@@ -1,8 +1,7 @@
 # bkup
 **Cloud-Agnostic Kubernetes Backup Tool**
 
-> bkup is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
-
+**bkup* is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
 * :minidisc: **Export** Kubernetes data to remote storage.
 * :recycle: **Import** backed-up data to Kubernetes.
@@ -10,11 +9,13 @@
 * :closed_lock_with_key: **Ensure data Integrity:** Scale-down running workload, backup their volumes and restore the workload.
 * :pinching_hand: **Cloud-Native & Minimalist:** Light footprint, easy to install, and fully customizable from standard Kubernetes manifests without third-party CRD dependencies.
 
+<br>
 
 ## Requirements
 * Remote storage (Azure Blob Storage, S3 etc...), with credentials
 * Working Kubernetes cluster
 
+<br>
 
 ## Installation
 > [!CAUTION]
@@ -62,7 +63,8 @@
     ```
     bkup -c KUBECTL_CONTEXT -bm
     ```
-    
+
+<br>
 
 ## Usage
 > Ensure required manifests are created
@@ -105,16 +107,9 @@ bkup -c KUBECTL_CONTEXT -n NAMESPACE
 bkup --help
 ```
 
+<br>
 
-## Developpers
-### Code base
-* `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
-* `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & sync it to remote storage)
-* `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
-* `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
-* `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
-* `utils/`      => a bunch of helpers functions
-
+## Administration
 
 ### ConfigMap `backup-map`
 bkup relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
@@ -226,6 +221,16 @@ The `config` Secret is the core configuration secret required to operate. It mus
 #### How to configure for S3
 * tofill
 
+<br>
+
+## Developpers
+### Code base
+* `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
+* `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & sync it to remote storage)
+* `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
+* `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
+* `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
+* `utils/`      => a bunch of helpers functions
 
 ### Workflows
 #### Volumes
