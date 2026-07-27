@@ -148,8 +148,7 @@ def run_backup_job(cluster_context: str, namespace: str):
     active_nodes = get_active_cluster_nodes(kube)
 
     print("\n==================================================")
-    print(f" STARTING BACKUPS FOR NAMESPACE {namespace}")
-    print("==================================================")
+    print(f" Starting backups for namespace : {namespace}")
 
     # ==================================================
     # PHASE 0 : CLEANUP OLD JOBS
@@ -336,9 +335,8 @@ def run_backup_job(cluster_context: str, namespace: str):
             print("\nPHASE 4: Executing safety restoration check on production workloads...")
             restore_workloads_from_state(kube, master_ns, backup_workloads)
 
-    print("\n==================================================")
-    print(f" BACKUP PROCESS CONCLUDED FOR NAMESPACE {namespace}")
-    print("==================================================")
+    print(f" Backup concluded for namespace : {namespace}")
+    print("==================================================\n")
 
 
 def main():
