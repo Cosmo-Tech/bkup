@@ -399,6 +399,8 @@ def main():
             print("hint: generate and apply one first using 'bkup -bm -a'")
             sys.exit(1)
 
+        print(yaml.dump(saved_map, sort_keys=False, default_flow_style=False))
+
         # If a single namespace is targeted via -n, execute only this one
         if namespace_input:
             target_namespaces = [namespace_input.strip()]

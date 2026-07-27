@@ -4,6 +4,7 @@ metadata:
   name: bkup-master
   namespace: ${NAMESPACE}
 spec:
+  restartPolicy: Never
   containers:
     - name: bkup-master
       image: ghcr.io/cosmo-tech/bkup:ci
