@@ -256,13 +256,15 @@ def run_backup_job(cluster_context: str, namespace: str):
         # ==================================================
         print("\nPHASE 2: Waiting for scaled-down workloads to stop...")
         for resource_key, info in backup_workloads.items():
-            if info["namespace"] == namespace and info["should_scale"] and (info["initial_replicas"] > 0 or info["current_real_replicas"] > 0):
-                kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
+            if info["namespace"] == namespace and info["should_scale"]:
+                if info["initial_replicas"] > 0 or info["current_real_replicas"] > 0:
+                    kube.wait_for_scale_down(info["resource_type"], info["resource_name"])
 
         print("\nensure PVC are not attached anymore...")
         for resource_key, info in backup_workloads.items():
             if info["namespace"] == namespace and info["should_scale"]:
-                kube.wait_for_volume_detachment(info["pvc_name"])
+                if info["initial_replicas"] > 0 or info["current_real_replicas"] > 0:
+                    kube.wait_for_volume_detachment(info["pvc_name"])
 
         # ==================================================
         # PHASE 3 : TRIGGER CONCURRENT BACKUPS

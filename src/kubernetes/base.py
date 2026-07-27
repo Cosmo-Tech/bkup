@@ -511,7 +511,7 @@ class KubernetesBase:
         pods_locking_pvc = []
 
         for pod in pods.items:
-            if pod.metadata.name.startswith("clustersnap-backup-") or pod.metadata.name.startswith("bkup-"):
+            if pod.metadata.name.startswith("bkup-backup-") or pod.metadata.name.startswith("bkup-"):
                 continue
 
             if pod.spec.volumes:
