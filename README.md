@@ -233,12 +233,13 @@ The `config` Secret is the core configuration secret required to operate. It mus
 ##### Export
 
 ```mermaid
+%%{init: { 'theme': 'base', 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
     --> B[for each namespace <br> in backup-map]
     --> C[PVC/pods assessment]
     --> D[Store workload <br> in backup-cache]
-    D --> E{replicas ?}
+    D --> E{current replicas ?}
     E -->|>0| F[Scale each to 0]
     E -->|=0| G[Keep as it is]
     F --> G[volume.tar.gz stream <br> to Remote Storage]
@@ -255,12 +256,13 @@ tofill
 ##### Export
 
 ```mermaid
+%%{init: { 'theme': 'base', 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
     --> B[for each namespace <br> in backup-map]
     --> C[PVC/pods assessment]
     --> D[Store workload <br> in backup-cache]
-    D --> E{replicas ?}
+    D --> E{current replicas ?}
     E -->|=0| F[Scale each to 1]
     E -->|>0| G[Keep as it is]
     F --> G[pg_dump.sql.gz stream <br> to Remote Storage]
