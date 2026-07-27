@@ -415,7 +415,7 @@ def main():
         starting_time_job = general_helper.now()
         print(f"info: Starting backup job at {starting_time_job}")
 
-        for ns in target_namespaces:        
+        for ns in target_namespaces:
             kube.namespace = ns
             run_backup_job(cluster_context, namespace=ns)
 
