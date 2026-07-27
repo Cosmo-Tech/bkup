@@ -335,7 +335,7 @@ def run_backup_job(cluster_context: str, namespace: str):
             print("\nPHASE 4: Executing safety restoration check on production workloads...")
             restore_workloads_from_state(kube, master_ns, backup_workloads)
 
-    print(f" Backup concluded for namespace : {namespace}")
+    print(f" Conclude backups for namespace : {namespace}")
     print("==================================================\n")
 
 
