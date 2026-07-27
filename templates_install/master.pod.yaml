@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: bkup-master
-      image: ghcr.io/cosmo-tech/bkup:latest
+      image: ghcr.io/cosmo-tech/bkup:ci
       imagePullPolicy: Always
       env:
         - name: CLUSTER_NAME
