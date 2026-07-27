@@ -57,7 +57,7 @@ class KubernetesBase:
             ns_list = self.core_v1.list_namespace()
             return [ns.metadata.name for ns in ns_list.items]
         except Exception as e:
-            print(f"error: failed to list namespaces: {e}")
+            print(f"error: Failed to list namespaces: {e}")
             return []
 
     def list_pvc(self) -> list:
@@ -65,7 +65,7 @@ class KubernetesBase:
             pvcs = self.core_v1.list_namespaced_persistent_volume_claim(namespace=self.namespace)
             return [{"name": p.metadata.name} for p in pvcs.items]
         except Exception as e:
-            print(f"error: failed to list PVCs in {self.namespace}: {e}")
+            print(f"error: Failed to list PVCs in {self.namespace}: {e}")
             return []
 
     def get_pvc(self, pvc_name: str) -> list:
@@ -88,7 +88,7 @@ class KubernetesBase:
                     m["resource"] = f"StatefulSet/{s.metadata.name}"
                     targets.append(m)
         except Exception as e:
-            print(f"error: failed to scan workload mounts for PVC '{pvc_name}': {e}")
+            print(f"error: Failed to scan workload mounts for PVC '{pvc_name}': {e}")
         return targets
 
     def get_pod_ip(self, resource_type: str, resource_name: str, pvc_name: str) -> str:
@@ -128,7 +128,7 @@ class KubernetesBase:
             if spec and spec.image_pull_secrets:
                 return [s.name for s in spec.image_pull_secrets]
         except Exception as e:
-            print(f"  warn: failed to read imagePullSecrets for {resource_type}/{resource_name}: {e}")
+            print(f"  warn: Failed to read imagePullSecrets for {resource_type}/{resource_name}: {e}")
 
         return []
 
@@ -196,7 +196,7 @@ class KubernetesBase:
             # 4. If node name cannot be retrieved, return empty string
             return ""
         except Exception as e:
-            print(f"  error: failed to resolve node attachment for PVC '{pvc_name}': {e}")
+            print(f"  error: Failed to resolve node attachment for PVC '{pvc_name}': {e}")
             return ""
 
     def get_replicas(self, resource_type: str, resource_name: str) -> int:
@@ -218,9 +218,9 @@ class KubernetesBase:
                 self.apps_v1.patch_namespaced_stateful_set(name=resource_name, namespace=self.namespace, body=body)
             elif resource_type.lower() == "deployment":
                 self.apps_v1.patch_namespaced_deployment(name=resource_name, namespace=self.namespace, body=body)
-            print(f"  info: scaled {resource_type}/{resource_name} to {replicas} replicas.")
+            print(f"  info: Scaled {resource_type}/{resource_name} to {replicas} replicas.")
         except Exception as e:
-            print(f"  error: failed to scale {resource_type}/{resource_name}: {e}")
+            print(f"  error: Failed to scale {resource_type}/{resource_name}: {e}")
 
     def get_workload_image(self, resource_type: str, resource_name: str) -> str:
         """Extract exact container image used by workload. Raises ValueError if missing."""
@@ -269,7 +269,7 @@ class KubernetesBase:
         except client.exceptions.ApiException as e:
             if e.status == 404:
                 return {}
-            print(f"  error: failed to read ConfigMap '{name}': {e}")
+            print(f"  error: Failed to read ConfigMap '{name}': {e}")
             raise e
 
     def save_to_configmap(self, name: str, namespace: str, data: dict):
@@ -292,13 +292,13 @@ class KubernetesBase:
         try:
             self.core_v1.read_namespaced_config_map(name=name, namespace=namespace)
             self.core_v1.patch_namespaced_config_map(name=name, namespace=namespace, body=body)
-            print(f"\ninfo: configuration backup-map successfully updated inside configmap {name}")
+            print(f"  info: ConfigMap '{namespace}/{name}' successfully updated")
         except client.exceptions.ApiException as e:
             if e.status == 404:
                 self.core_v1.create_namespaced_config_map(namespace=namespace, body=body)
-                print(f"info: configuration backup-map successfully created inside configmap {name}")
+                print(f"  info: ConfigMap '{namespace}/{name}' successfully created")
             else:
-                print(f"error: failed to save ConfigMap {name}: {e}")
+                print(f"error: Failed to save ConfigMap {name}: {e}")
                 raise e
 
     def get_secret_payload(self, name: str, namespace: str) -> dict:
@@ -430,23 +430,23 @@ class KubernetesBase:
 
         try:
             self.batch_v1.create_namespaced_job(namespace=self.namespace, body=job_manifest)
-            print(f"  info: launched backup job '{job_name}' successfully.")
+            print(f"  info: Launched backup job '{job_name}' successfully.")
         except Exception as e:
-            print(f"  error: failed to submit job manifest '{job_name}': {e}")
+            print(f"  error: Failed to submit job manifest '{job_name}': {e}")
             raise e
 
     def delete_backup_job(self, pvc_name: str, suffix: str = ""):
         job_name = self.get_job_name(pvc_name, suffix=suffix)
         try:
             self.batch_v1.delete_namespaced_job(name=job_name, namespace=self.namespace, body=client.V1DeleteOptions(propagation_policy="Background"))
-            print(f"  info: deleted backup job {job_name}")
+            print(f"  info: Deleted backup job {job_name}")
         except client.exceptions.ApiException as e:
             if e.status != 404:
-                print(f"  warn: failed to delete job {job_name}: {e}")
+                print(f"  warn: Failed to delete job {job_name}: {e}")
 
     def wait_for_scale_down(self, resource_type: str, resource_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
         """Block execution until the targeted workload replicas drop strictly to 0 according to the API."""
-        print(f"  info: waiting for {resource_type}/{resource_name} to scale down to 0...")
+        print(f"  info: Waiting for {resource_type}/{resource_name} to scale down to 0...")
         start_time = time.time()
 
         while time.time() - start_time < timeout:
@@ -458,12 +458,12 @@ class KubernetesBase:
 
             time.sleep(check_interval)
 
-        print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale down.")
+        print(f"  warn: Timeout reached waiting for {resource_type}/{resource_name} scale down.")
         return False
 
     def wait_for_scale_up(self, resource_type: str, resource_name: str, target_replicas: int, timeout: int = 300, check_interval: int = 5) -> bool:
         """Block execution until the specific workload replicas scale back up and its own Pod has an active IP assigned."""
-        print(f"  info: waiting for {resource_type}/{resource_name} to scale up to {target_replicas} replica(s)...")
+        print(f"  info: Waiting for {resource_type}/{resource_name} to scale up to {target_replicas} replica(s)...")
         start_time = time.time()
 
         while time.time() - start_time < timeout:
@@ -480,11 +480,11 @@ class KubernetesBase:
                                         print(f"  info: {resource_type}/{resource_name} pod '{pod.metadata.name}' is Running with IP {pod.status.pod_ip}.")
                                         return True
                 except Exception as e:
-                    print(f"  warn: error inspecting pods for {resource_type}/{resource_name}: {e}")
+                    print(f"  warn: Error inspecting pods for {resource_type}/{resource_name}: {e}")
 
             time.sleep(check_interval)
 
-        print(f"  warn: timeout reached waiting for {resource_type}/{resource_name} scale up.")
+        print(f"  warn: Timeout reached waiting for {resource_type}/{resource_name} scale up.")
         return False
 
     def is_topology_constrained(self, pvc_name: str) -> bool:
@@ -499,19 +499,19 @@ class KubernetesBase:
                     return False
                 return True
         except Exception as e:
-            print(f"      warn: storage topology assessment bypassed ({e}). Defaulting to constrained.")
+            print(f"      warn: Storage topology assessment bypassed ({e}). Defaulting to constrained.")
         return True
 
     def wait_for_volume_detachment(self, pvc_name: str, timeout: int = 300, check_interval: int = 5) -> bool:
         """Instant check for PVC detachment. Returns immediately if workload was already stopped."""
-        print(f"   info: checking PVC '{pvc_name}' status in namespace '{self.namespace}'...")
+        print(f"  info: Checking PVC '{pvc_name}' status in namespace '{self.namespace}'...")
 
         pods = self.core_v1.list_namespaced_pod(namespace=self.namespace)
         pvc_is_locked = False
         pods_locking_pvc = []
 
         for pod in pods.items:
-            if pod.metadata.name.startswith("clustersnap-backup-") or pod.metadata.name.startswith("bkup-"):
+            if pod.metadata.name.startswith("bkup-backup-") or pod.metadata.name.startswith("bkup-"):
                 continue
 
             if pod.spec.volumes:
@@ -534,7 +534,7 @@ class KubernetesBase:
 
     def wait_for_job_completion(self, job_name: str, timeout: int = 600, check_interval: int = 5) -> bool:
         """Universal CSI-agnostic monitoring for backup Job execution until completion."""
-        print(f"  info: monitoring job '{job_name}' until completion tracking...")
+        print(f"  info: Waiting job '{job_name}' until completion tracking...")
         start_time = time.time()
 
         while time.time() - start_time < timeout:
@@ -559,7 +559,7 @@ class KubernetesBase:
 
             time.sleep(check_interval)
 
-        print(f"  error: timeout reached waiting for job '{job_name}' completion.")
+        print(f"  error: Timeout reached waiting for job '{job_name}' completion.")
         return False
 
     def wait_for_jobs_deletion(self, pvc_list: list, timeout: int = 60, check_interval: int = 2) -> bool:

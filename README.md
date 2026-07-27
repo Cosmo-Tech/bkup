@@ -1,8 +1,7 @@
 # bkup
 **Cloud-Agnostic Kubernetes Backup Tool**
 
-> bkup is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
-
+**bkup** is a lightweight, production-grade, cloud-agnostic backup tool that safely secures Kubernetes volumes into remote storage like Azure Blob Storage or AWS S3.
 
 * :minidisc: **Export** Kubernetes data to remote storage.
 * :recycle: **Import** backed-up data to Kubernetes.
@@ -10,11 +9,13 @@
 * :closed_lock_with_key: **Ensure data Integrity:** Scale-down running workload, backup their volumes and restore the workload.
 * :pinching_hand: **Cloud-Native & Minimalist:** Light footprint, easy to install, and fully customizable from standard Kubernetes manifests without third-party CRD dependencies.
 
+<br>
 
 ## Requirements
 * Remote storage (Azure Blob Storage, S3 etc...), with credentials
 * Working Kubernetes cluster
 
+<br>
 
 ## Installation
 > [!CAUTION]
@@ -62,7 +63,8 @@
     ```
     bkup -c KUBECTL_CONTEXT -bm
     ```
-    
+
+<br>
 
 ## Usage
 > Ensure required manifests are created
@@ -105,16 +107,9 @@ bkup -c KUBECTL_CONTEXT -n NAMESPACE
 bkup --help
 ```
 
+<br>
 
-## Developpers
-### Code base
-* `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
-* `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & sync it to remote storage)
-* `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
-* `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
-* `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
-* `utils/`      => a bunch of helpers functions
-
+## Administration
 
 ### ConfigMap `backup-map`
 bkup relies on a ConfigMap called the `backup-map` to orchestrate its backups plans.
@@ -125,7 +120,7 @@ The `backup-map` is really simple:
 * can/must be manually modified => The backup-map is pre-gen but some informations are not predictable, any "CHANGEME" values must be replaced
 * stored in namespace of the `master pod` (or default namespace if bkup is not running in the cluster)
 
-#### Example
+#### Structure example
 ```
 bkup-backup-map.yaml: |
   cluster: example
@@ -200,14 +195,7 @@ Here is the list of configurable keys:
 > [!CAUTION]
 > **Security Note:** Plain-text `password` keys are strictly forbidden in `backup-map`. Always use `password-secret`.
 
-
-
-### ConfigMap `backup-cache`
-The `backup-cache` ConfigMap is an internal state tracker used during backup execution. 
-* It stores the initial replica counts of all scaled-down workloads before the backup starts.
-* If the master script crashes, gets killed, or receives a termination signal (`SIGINT`/`SIGTERM`), it reads this cache during the recovery phase to reliably restore production workloads to their original state.
-* Once the backup and restoration sequence finishes successfully, the cache is automatically purged.
-
+<br>
 
 ### Secret `config`
 The `config` Secret is the core configuration secret required to operate. It must be created prior to running backup operations and contains remote storage credentials and target metadata:
@@ -217,62 +205,88 @@ The `config` Secret is the core configuration secret required to operate. It mus
 * `storage-username`: Storage account username
 * `storage-password`: Storage account password
 
-#### How to configure for Azure
+<br>
+
+#### How to configure for Azure Storage
 * Go to Azure > Storage Accounts > *<your Storage Account>*
   * `storage-address`  = https://`STORAGE_ACCOUNT_NAME`.blob.core.windows.net/
   * `storage-username` = `STORAGE_ACCOUNT_NAME`
   * `storage-password` = Go to **Access Keys** > copy/paste one of the Key
 
+<br>
+
 #### How to configure for S3
 * tofill
 
+<br>
+
+## Developpers
+### Code base
+* `master.py`   => entrypoint of the master pod (orchestrate backup jobs, scaling replicas etc...)
+* `exporter.py` => entrypoint of the exporter pod (do the backup = dump persisted storage & stream it to remote storage)
+* `importer.py` => entrypoint of the importer pod (import backups from remote storage to Kubernetes)
+* `kubernetes/` => implement KubernetesBase class & subclasses to work with the Kubernetes API
+* `storage/`    => implement StorageBase class to work with remote storage APIs (Azure Storage, S3 etc...)
+* `utils/`      => a bunch of helpers functions
+
+<br>
+
+### ConfigMap `backup-cache`
+The `backup-cache` ConfigMap is an internal state tracker used during backup execution.
+* It stores the initial replica counts of all scaled-down workloads before the backup starts.
+* If the master script crashes, gets killed, or receives a termination signal (`SIGINT`/`SIGTERM`), it reads this cache during the recovery phase to reliably restore production workloads to their original state.
+* Once the backup and restoration sequence finishes successfully, the cache is automatically purged.
+
+<br>
 
 ### Workflows
 #### Volumes
 * Run a Kubernetes job to dump content of PVC mount points
-##### Export
 
+##### Export
 ```mermaid
 %%{init: { 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
-    --> B[for each namespace <br> in backup-map]
-    --> C[PVC/pods assessment]
+    --> B[For each namespace <br> in backup-map]
+    --> C[Running pods/PVC <br> assessment]
     --> D[Store workload <br> in backup-cache]
-    D --> E{current replicas ?}
+    D --> E{Current replicas <br> quantity ?}
     E -->|>0| F[Scale each to 0]
     E -->|=0| G[Keep as it is]
-    F --> G[volume.tar.gz stream <br> to Remote Storage]
-    G --> H[wait for end]
-    H --> I[restore cached replicas <br> from backup-cache]
+    F --> G[Stream volume.tar.gz <br> to Remote Storage]
+    G --> H[Wait for end]
+    H --> I[Restore cached replicas <br> from backup-cache]
 ```
 
 ##### Import
 tofill
 
+<br>
 
 #### PostgreSQL
 * Run a Kubernetes job based on the original PostgreSQL image (to get same version) to dump databases
-##### Export
 
+##### Export
 ```mermaid
 %%{init: { 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
-    --> B[for each namespace <br> in backup-map]
-    --> C[PVC/pods assessment]
+    --> B[For each namespace <br> in backup-map]
+    --> C[Running pods/PVC <br> assessment]
     --> D[Store workload <br> in backup-cache]
-    D --> E{current replicas ?}
+    D --> E{Current replicas <br> quantity ?}
     E -->|=0| F[Scale each to 1]
     E -->|>0| G[Keep as it is]
-    F --> G[pg_dump.sql.gz stream <br> to Remote Storage]
-    G --> H[wait for end]
-    H --> I[restore cached replicas <br> from backup-cache]
+    F --> G[Stream pg_dump.sql.gz <br> to Remote Storage]
+    G --> H[Wait for end]
+    H --> I[Restore cached replicas <br> from backup-cache]
 ```
 
 ##### Import
 tofill
 
+<br>
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE file](https://raw.githubusercontent.com/Cosmo-Tech/bkup/main/LICENSE.md) for details.
