@@ -235,15 +235,15 @@ The `config` Secret is the core configuration secret required to operate. It mus
 ```mermaid
 flowchart TD
     A[Read backup-map]
-    --> B[for each backup-map namespace]
+    --> B[for each namespace <br> in backup-map]
     --> C[PVC/pods assessment]
-    --> D[Store workload in backup-cache]
+    --> D[Store workload <br> in backup-cache]
     D --> E{replicas ?}
     E -->|>0| F[Scale each to 0]
     E -->|=0| G[Keep as it is]
-    F --> G[volume.tar.gz stream to Remote Storage]
+    F --> G[volume.tar.gz stream <br> to Remote Storage]
     G --> H[wait for end]
-    H --> I[restore replicas from backup-cache]
+    H --> I[restore cached replicas <br> from backup-cache]
 ```
 
 ##### Import
@@ -257,15 +257,15 @@ tofill
 ```mermaid
 flowchart TD
     A[Read backup-map]
-    --> B[for each backup-map namespace]
+    --> B[for each namespace <br> in backup-map]
     --> C[PVC/pods assessment]
-    --> D[Store workload in backup-cache]
+    --> D[Store workload <br> in backup-cache]
     D --> E{replicas ?}
     E -->|=0| F[Scale each to 1]
     E -->|>0| G[Keep as it is]
-    F --> G[pg_dump.sql.gz stream to Remote Storage]
+    F --> G[pg_dump.sql.gz stream <br> to Remote Storage]
     G --> H[wait for end]
-    H --> I[restore replicas from backup-cache]
+    H --> I[restore cached replicas <br> from backup-cache]
 ```
 
 ##### Import
