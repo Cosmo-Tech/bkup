@@ -233,7 +233,7 @@ The `config` Secret is the core configuration secret required to operate. It mus
 ##### Export
 
 ```mermaid
-%%{init: { 'theme': 'base', 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
+%%{init: { 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
     --> B[for each namespace <br> in backup-map]
@@ -256,7 +256,7 @@ tofill
 ##### Export
 
 ```mermaid
-%%{init: { 'theme': 'base', 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
+%%{init: { 'themeVariables': { 'fontSize': '11px' }, 'flowchart': { 'rankSpacing': 30 } } }%%
 flowchart TD
     A[Read backup-map]
     --> B[for each namespace <br> in backup-map]
