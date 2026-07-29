@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ NAMESPACE }}"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - "{{ NODE_NAME }}"
+      containers:
+        - name: worker
+          image: ghcr.io/cosmo-tech/bkup:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "src.exporter"]
+          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: volume-to-backup
+              mountPath: "{{ MOUNTED_PATH }}"
+              readOnly: true
+          env:
+            - name: STORAGE_ADDRESS
+              value: "templated"
+            - name: STORAGE_USERNAME
+              value: "templated"
+            - name: STORAGE_PASSWORD
+              value: "templated"
+            - name: CLUSTER_NAME
+              value: "templated"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      volumes:
+        - name: volume-to-backup
+          persistentVolumeClaim:
+            claimName: "{{ PVC_NAME }}"

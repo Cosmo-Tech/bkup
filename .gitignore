@@ -1,5 +1,7 @@
 .env
 .venv/
+
 __pycache__/
-_bmd-output/
-docs
+build/
+
+*.egg-info
