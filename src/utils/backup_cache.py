@@ -1,9 +1,16 @@
 import yaml
 
+import src.utils.general as general_helper
+
+
+def get_backup_cache_name():
+    """Get the ConfigMap name of the backup-cache, which is linked to the installation name."""
+    return f"{general_helper.get_installation_name()}-backup-cache"
+
 
 def get_backup_cache(kube) -> dict:
     """Get the existing ConfigMap of the backup-cache."""
-    saved_cache = kube.get_configmap(name="bkup-backup-cache", namespace=kube.get_namespace())
+    saved_cache = kube.get_configmap(name=cm_name, namespace=kube.get_namespace())
 
     if not saved_cache:
         return {"namespaces": []}
@@ -13,8 +20,8 @@ def get_backup_cache(kube) -> dict:
         return saved_cache
 
     # If get_configmap returned the global ConfigMap dictionary with its file key
-    if isinstance(saved_cache, dict) and "bkup-backup-cache.yaml" in saved_cache:
-        content = saved_cache["bkup-backup-cache.yaml"]
+    if isinstance(saved_cache, dict) and f"{cm_name}.yaml" in saved_cache:
+        content = saved_cache[f"{cm_name}.yaml"]
         if isinstance(content, dict) and "namespaces" in content:
             return content
         try:
@@ -28,11 +35,12 @@ def get_backup_cache(kube) -> dict:
 
 
 def save_backup_cache(kube, cache_data: dict, master_namespace: str):
-    """Save the provided hierarchical cache data structure inside the ConfigMap."""
+    """Save the provided cache data structure inside the ConfigMap."""
     orig_ns = kube.namespace
+    cm_name = get_backup_cache_name()
     try:
         kube.namespace = master_namespace
-        kube.save_to_configmap(name="bkup-backup-cache", namespace=master_namespace, data={"bkup-backup-cache.yaml": yaml.dump(cache_data, default_flow_style=False)})
+        kube.save_to_configmap(name=cm_name, namespace=master_namespace, data={f"{cm_name}.yaml": yaml.dump(cache_data, default_flow_style=False)})
     finally:
         kube.namespace = orig_ns
 
@@ -42,7 +50,7 @@ def clear_backup_cache(kube, master_namespace: str):
     orig_ns = kube.namespace
     try:
         kube.namespace = master_namespace
-        kube.save_to_configmap(name="bkup-backup-cache", namespace=master_namespace, data={})
+        kube.save_to_configmap(name=cm_name, namespace=master_namespace, data={})
     except Exception as e:
         print(f"  warn: failed to clear backup cache ConfigMap: {e}")
     finally:

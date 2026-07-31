@@ -1,4 +1,13 @@
+import os
 from datetime import datetime
+
+
+def get_installation_name():
+    """Find the installation name of bkup. This allow to use the Helm release name as well as name defined from manual manifests."""
+    try:
+        return os.environ['INSTALLATION_NAME']
+    except Exception as e:
+        print(f"error: cannot get the bkup installation name: {e}")
 
 
 def now() -> str:
@@ -35,3 +44,4 @@ def datetime_difference(start_time: datetime, end_time: datetime) -> str:
         return f"{days}d {time_str}"
 
     return time_str
+

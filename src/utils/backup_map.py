@@ -1,12 +1,20 @@
 import yaml
 
 import src.utils.psql as psql
+import src.utils.general as general_helper
+
+
+def get_backup_map_name():
+    """Get the ConfigMap name of the backup-map, which is linked to the installation name."""
+    return f"{general_helper.get_installation_name()}-backup-map"
 
 
 def get_backup_map(kube, master_ns: str = None) -> dict:
     """Get existing ConfigMap of the backup-map."""
+    cm_name = get_backup_map_name()
+
     target_ns = master_ns if master_ns else kube.get_namespace()
-    saved_map = kube.get_configmap(name="bkup-backup-map", namespace=target_ns)
+    saved_map = kube.get_configmap(name=cm_name, namespace=target_ns)
 
     if not saved_map:
         return {"cluster": kube.get_cluster_name(), "namespaces": []}
@@ -14,8 +22,8 @@ def get_backup_map(kube, master_ns: str = None) -> dict:
     if isinstance(saved_map, dict) and "namespaces" in saved_map:
         return saved_map
 
-    if isinstance(saved_map, dict) and "bkup-backup-map.yaml" in saved_map:
-        content = saved_map["bkup-backup-map.yaml"]
+    if isinstance(saved_map, dict) and f"{cm_name}.yaml" in saved_map:
+        content = saved_map[f"{cm_name}.yaml"]
         if isinstance(content, dict) and "namespaces" in content:
             return content
         try:
