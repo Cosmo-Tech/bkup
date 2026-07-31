@@ -9,11 +9,11 @@ def get_backup_map_name():
     return f"{general_helper.get_installation_name()}-backup-map"
 
 
-def get_backup_map(kube, master_ns: str = None) -> dict:
+def get_backup_map_content(kube, namespace: str = None) -> dict:
     """Get existing ConfigMap of the backup-map."""
     cm_name = get_backup_map_name()
 
-    target_ns = master_ns if master_ns else kube.get_namespace()
+    target_ns = namespace if namespace else kube.get_namespace()
     saved_map = kube.get_configmap(name=cm_name, namespace=target_ns)
 
     if not saved_map:

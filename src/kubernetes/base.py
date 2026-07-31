@@ -2,6 +2,7 @@ import os
 import yaml
 import time
 import hashlib
+import base64
 from kubernetes import client, config
 
 
@@ -303,8 +304,6 @@ class KubernetesBase:
 
     def get_secret_payload(self, name: str, namespace: str) -> dict:
         """Centralized and safe extraction of Secret base64 values decoded into a plain text map."""
-        import base64
-
         try:
             secret = self.core_v1.read_namespaced_secret(name=name, namespace=namespace)
             if not secret.data:
@@ -396,25 +395,25 @@ class KubernetesBase:
                 if name == "STORAGE_ADDRESS":
                     val = secret_data.get("storage-address")
                     if not val:
-                        raise ValueError(f"Required key 'storage-address' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
+                        raise ValueError(f"Required key 'storage-address' missing in 'config' Secret (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_USERNAME":
                     val = secret_data.get("storage-username")
                     if not val:
-                        raise ValueError(f"Required key 'storage-username' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
+                        raise ValueError(f"Required key 'storage-username' missing in 'config' Secret (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "STORAGE_PASSWORD":
                     val = secret_data.get("storage-password")
                     if not val:
-                        raise ValueError(f"Required key 'storage-password' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
+                        raise ValueError(f"Required key 'storage-password' missing in 'config' Secret (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 elif name == "CLUSTER_NAME":
                     val = secret_data.get("cluster-name")
                     if not val:
-                        raise ValueError(f"Required key 'cluster-name' missing in Secret 'bkup-config' (namespace: '{master_ns}')")
+                        raise ValueError(f"Required key 'cluster-name' missing (namespace: '{master_ns}')")
                     final_overrides[name] = {"name": name, "value": val}
 
                 else:

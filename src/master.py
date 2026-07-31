@@ -1,8 +1,10 @@
+import os
 import sys
 import argparse
 import signal
 import yaml
 
+from src.kubernetes.base import KubernetesBase
 from src.kubernetes.job_volume import VolumeBackupJob
 from src.kubernetes.job_postgresql import PostgresBackupJob
 import src.utils.psql as psql
@@ -117,7 +119,7 @@ def run_backup_job(cluster_context: str, namespace: str):
     # STRICT BACKUP-MAP CHECK
     # --------------------------------------------------
     ns_claims_entries = []
-    backup_map_config = backup_map.get_backup_map(kube, master_ns=master_ns)
+    backup_map_config = backup_map.get_backup_map_content(kube, master_ns=master_ns)
 
     if isinstance(backup_map_config, dict) and "namespaces" in backup_map_config:
         for ns_entry in backup_map_config.get("namespaces", []):
@@ -351,23 +353,29 @@ def main():
     # ----------------------------------
     # Reject if kube context if missing
     try:
-        kube = VolumeBackupJob(context=cluster_context, namespace="default")
+        cluster_context = os.environ["CLUSTER_CONTEXT"]
+        target_namespaces = os.environ["TARGET_NAMESPACES"]
+
+        kube = KubernetesBase(context=cluster_context, namespace=namespace)
         kube_client_sigkill = kube
     except Exception as e:
         print(f"error: {e}")
         sys.exit(1)
 
-    master_ns = config_secret.get_config_secret_namespace(kube)
-    kube.namespace = master_ns
+    # master_ns = config_secret.get_config_secret_namespace(kube)
+    # kube.namespace = master_ns
 
-    # Verify ConfigMap existence before processing
-    saved_map = backup_map.get_backup_map(kube, master_ns=master_ns)
-    if not saved_map or not saved_map.get("namespaces"):
-        print(f"error: ConfigMap 'bkup-backup-map' is missing or empty in namespace '{master_ns}'.")
-        print("hint: Generate and apply one first using 'bkup -bm -a'")
-        sys.exit(1)
+    # backup_map_name = backup_map.get_backup_map_name
+    # backup_map_ns = master_ns
 
-    print(f"{yaml.dump(saved_map, sort_keys=False, default_flow_style=False)}\n")
+    # # Verify ConfigMap existence before processing
+    # saved_map = backup_map.get_backup_map_content(kube, namespace=backup_map_ns)
+    # if not saved_map or not saved_map.get("namespaces"):
+    #     print(f"error: ConfigMap '{backup_map_name}' is missing or empty in namespace '{backup_map_ns}'.")
+    #     print("hint: Generate and apply one first using 'bkup -bm -a'")
+    #     sys.exit(1)
+
+    # print(f"{yaml.dump(saved_map, sort_keys=False, default_flow_style=False)}\n")
 
     # If a single namespace is targeted via -n, execute only this one
     if namespace_input:

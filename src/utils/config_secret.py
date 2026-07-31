@@ -6,16 +6,12 @@ def get_config_secret_name():
     return f"{general_helper.get_installation_name()}-backup-map"
 
 
-def get_config_secret_namespace(kube_client) -> str:
+def get_config_secret_namespace(kube) -> str:
     """Find the namespace containing the 'config' Secret."""
-
-    secret_name = f"{general_helper.get_installation_name()}-config"
-
-    for ns in kube_client.list_namespaces():
-        try:
-            if kube_client.get_secret_payload(name=secret_name, namespace=ns):
+    try:
+        for ns in kube.list_namespaces():
+            secret_name = f"{general_helper.get_installation_name()}-config"
+            if kube.get_secret_payload(f"{secret_name}-config", namespace=ns):
                 return ns
-        except Exception:
-            continue
-
-    raise RuntimeError("Error: Secret 'config' not found in any namespace.")
+    except Exception as e:
+        print(f"Error: Secret 'config' not found in any namespace. {e}")

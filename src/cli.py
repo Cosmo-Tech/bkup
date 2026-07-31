@@ -1,3 +1,4 @@
+import os
 import sys
 import argparse
 import signal
@@ -19,7 +20,8 @@ def main():
     # Global options
     global_group = parser.add_argument_group("global")
     global_group.add_argument("-c", "--context", type=str, metavar="CT", default=None, help="Local kubectl context")
-    global_group.add_argument("-n", "--namespace", type=str, metavar="NS", default=None, help="Target a namespace for backup job run")
+    global_group.add_argument("-n", "--namespace", type=str, metavar="NS", default=None, help="Target a namespace for backup job run. Using 'default' if not given.")
+    global_group.add_argument("-i", "--instance", type=str, metavar="NS", default=None, help="Target a running instance of bkup. Using 'bkup' if not given.")
     global_group.add_argument("-j", "--job", action="store_true", help="Run backup job(s) based on current backup-map")
     global_group.add_argument("-bm", "--backup-map", action="store_true", help="Manage backup-map configuration")
 
@@ -32,11 +34,21 @@ def main():
     args = parser.parse_args()
 
     cluster_context = args.context
+    os.environ["CLUSTER_CONTEXT"] = cluster_context
+
     namespace_input = args.namespace
     if namespace_input:
         namespace = namespace_input
     else:
         namespace = "default"
+    os.environ["TARGET_NAMESPACES"] = namespace
+
+    instance_input = args.instance
+    if instance_input:
+        instance = instance_input
+    else:
+        instance = 'bkup'
+    os.environ["INSTALLATION_NAME"] = instance
 
     # Strict validation of -bm sub-options usage
     if (args.apply or args.preview or args.get_current) and not args.backup_map:
@@ -51,6 +63,18 @@ def main():
 
 
     if args.job:
+        master_ns = config_secret.get_config_secret_namespace(kube)
+        backup_map_name = backup_map.get_backup_map_name()
+
+        # Verify ConfigMap existence before processing
+        saved_map = backup_map.get_backup_map_content(kube, namespace=master_ns)
+        if not saved_map or not saved_map.get("namespaces"):
+            print(f"error: ConfigMap '{backup_map_name}' is missing or empty in namespace '{master_ns}'.")
+            print("hint: Generate and apply one first using 'bkup -bm -a'")
+            sys.exit(1)
+
+        print(f"{yaml.dump(saved_map, sort_keys=False, default_flow_style=False)}\n")
+
         master.main()
 
     elif args.backup_map:
