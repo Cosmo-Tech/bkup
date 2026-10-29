@@ -1,5 +1,7 @@
 import os
 import yaml
+import jinja2
+from pathlib import Path
 
 from kubernetes import client, config
 from src.utils import general as utils
@@ -12,7 +14,7 @@ class KubernetesBase:
 
         # Ensure not running on default context in case of CLI usage
         if not context and not is_in_cluster:
-            raise ValueError("Missing cluster context. Get help with --help")
+            raise ValueError("missing cluster context")
 
         self.context = context
 
@@ -22,11 +24,11 @@ class KubernetesBase:
             else:
                 config.load_kube_config(context=self.context)
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Kubernetes connection with context '{self.context}': {e}")
+            raise RuntimeError(f"error: {utils.current_function()}: failed to initialize Kubernetes connection with context '{self.context}': {e}")
 
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
-        # self.batch_v1 = client.BatchV1Api()
+        self.batch_v1 = client.BatchV1Api()
         # self.storage_v1 = client.StorageV1Api()
 
 
@@ -219,5 +221,45 @@ class KubernetesBase:
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to retrieve workload/pvc/mountpoints combination: {e}")
         return results
+
+
+    def create_job(self,
+        template_path: str,
+        namespace: str,
+        image: str,
+        image_pull_policy: str,
+        job_name: str,
+        pvc_name: str,
+        # node_name: str,
+        mount_path: str,
+        storage_address: str,
+        storage_username: str,
+        storage_password: str,
+        storage_container: str
+        ):
+        """Create a Kubernetes Job from a given manifest."""
+        raw_yaml = Path(template_path).read_text(encoding="utf-8")
+        rendered_yaml = jinja2.Template(raw_yaml).render(
+            NAMESPACE=namespace,
+            IMAGE=image,
+            IMAGE_PULL_POLICY=image_pull_policy,
+            JOB_NAME=job_name,
+            PVC_NAME=pvc_name,
+            # NODE_NAME=node_name,
+            MOUNTED_PATH=mount_path,
+            STORAGE_ADDRESS=storage_address,
+            STORAGE_USERNAME=storage_username,
+            STORAGE_PASSWORD=storage_password,
+            STORAGE_CONTAINER=storage_container,
+            )
+
+        body = yaml.safe_load(rendered_yaml)
+
+        try:
+            return self.batch_v1.create_namespaced_job(namespace=namespace, body=body)
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to create job {namespace}/{job_name}: {e}")
+
+
 
 

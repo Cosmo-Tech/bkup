@@ -21,7 +21,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This script waits for a UNIX pipe from the sidecar container (this is to to use the right PostgreSQL binaries)
+              # This script waits for a UNIX pipe from the sidecar container (this is to use the right PostgreSQL binaries)
               pipe='/shared/pg_pipe'
 
               echo "waiting for sidecar UNIX pipe at $pipe..."
