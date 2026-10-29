@@ -1,0 +1,57 @@
+{{/*
+SPDX-FileCopyrightText: Copyright (C) 2022-2026 Cosmo Tech
+SPDX-License-Identifier: MIT
+*/}}
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "cosmotech-kubernetes-backup.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: "{{ required "backup.cron" .Values.backup.cron }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.backup.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.backup.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: 60
+  timeZone: {{ .Values.backup.timeZone }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: {{ include "cosmotech-kubernetes-backup.fullname" . }}
+          restartPolicy: Never
+          containers:
+            - name: {{ include "cosmotech-kubernetes-backup.fullname" . }}-workload
+              image: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
+              imagePullPolicy: {{ .Values.workload.image.pullPolicy }}
+              resources:
+                {{- toYaml .Values.workload.resources | nindent 16 }}
+              env:
+                - name: BKUP_STORAGE_ADDRESS
+                  value: {{ .Values.backup.destination.address }}
+                - name: BKUP_STORAGE_USERNAME
+                  value: {{ .Values.backup.destination.username }}
+                - name: BKUP_STORAGE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.destination.passwordSecret.name }}
+                      key: {{ .Values.backup.destination.passwordSecret.key }}
+                - name: BKUP_STORAGE_CONTAINER
+                  value: {{ .Values.backup.destination.container }}
+                - name: BKUP_TARGET_NAMESPACES
+                  value: {{ .Values.backup.volume.namespaces | toJson | quote }}
+                - name: BKUP_IMAGE
+                  value: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
+                - name: BKUP_IMAGE_PULL_POLICY
+                  value: {{ .Values.workload.image.pullPolicy }}
+
+          {{- with .Values.workload.image.pullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- with .Values.workload.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

@@ -12,16 +12,14 @@ license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "kubernetes",
-    "azure-identity",
-    "azure-storage-blob",
-    "pydantic",
     "psutil",
     "PyYAML",
+    "jinja2",
 ]
 
 
 [project.scripts]
-bkup = "src.master:main"
+bkup = "src.operator:main"
 
 
 [tool.setuptools.packages.find]

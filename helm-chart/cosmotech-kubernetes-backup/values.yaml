@@ -36,6 +36,7 @@ backup:
   successfulJobsHistoryLimit: 10
   # Number of failed jobs to keep in history
   failedJobsHistoryLimit: 10
+
   # Remote destination where to send backups
   # e.g:  
   # destination:
@@ -44,13 +45,16 @@ backup:
   #   passwordSecret:
   #     - name: mysecret
   #     - key: password
+  #   container: mycontainer
   destination:
     address: ""
     username: ""
     passwordSecret:
       name: mysecret
       key: password
-  # List of PostgreSQL to backup
+    container: ""
+
+  # Configure the job backup type for PostgreSQL
   # e.g:  
   # - address: postgresql.namespace.svc.cluster.local
   #   port: 5432
@@ -71,3 +75,14 @@ backup:
         key: password
       # Docker image to use as PostgreSQL client
       image: "myregistry/postgresql:tag"
+
+  # Configure the job backup type for volumes
+  # e.g:
+  # volume:
+  #   namespaces:
+  #     - namespace1
+  #     - namespace2
+  #     - namespace3
+  volume:
+    # Target specific namespaces to backup (if empty, all namespaces will be targetted)
+    namespaces: []

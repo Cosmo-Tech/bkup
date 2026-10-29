@@ -9,7 +9,7 @@ from src.kubernetes.base import KubernetesBase
 from src.utils import general as utils
 
 
-def main():
+def job_volumes():
     try:
         # cluster_context = os.environ["BKUP_CLUSTER_CONTEXT"]
         cluster_context = os.getenv('BKUP_CLUSTER_CONTEXT')
@@ -20,15 +20,8 @@ def main():
 
         mounts_map = {}
 
-
-        # namespaces = os.environ["BKUP_TARGET_NAMESPACES"] 
-        # if not namespaces:
-        #     namespaces = kube.list_namespaces()
-
         # List of namespaces to backup
         namespaces = os.getenv('BKUP_TARGET_NAMESPACES', kube.list_namespaces())
-
-
         for n in namespaces:
             mounts_map[n] = []
 
@@ -49,12 +42,12 @@ def main():
 
 
 
-        # image = "ghcr.io/cosmo-tech/bkup:latest"
-        # image_pull_policy = "Always"
-        storage_address = os.getenv('STORAGE_ADDRESS')
-        storage_username = os.getenv('STORAGE_USERNAME')
-        storage_password = os.getenv('STORAGE_PASSWORD')
-        storage_container = os.getenv('STORAGE_CONTAINER')
+        image                   = os.getenv('BKUP_IMAGE')
+        image_pull_policy       = os.getenv('BKUP_IMAGE_PULL_POLICY')
+        storage_address         = os.getenv('BKUP_STORAGE_ADDRESS')
+        storage_username        = os.getenv('BKUP_STORAGE_USERNAME')
+        storage_password        = os.getenv('BKUP_STORAGE_PASSWORD')
+        storage_container       = os.getenv('BKUP_STORAGE_CONTAINER')
         
         
         print(storage_address)
@@ -116,6 +109,10 @@ def main():
         print(f"error: {utils.current_function()}: {e}")
         sys.exit(1)
 
+
+def main():
+    job_volumes()
+    # job_postgresql()
 
 
 if __name__ == "__main__":
