@@ -9,21 +9,14 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - "{{ NODE_NAME }}"
       containers:
         - name: worker
-          image: ghcr.io/cosmo-tech/bkup:latest
-          imagePullPolicy: Always
-          command: ["python", "-m", "src.exporter"]
-          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
+          image: {{ IMAGE }}
+          imagePullPolicy: {{ IMAGE_PULL_POLICY }}
+          # command: ["python", "-m", "src.exporter"]
+          # args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
+          # command: ["python", "-m", "src.operator"]
+          command: ["echo", "test"]
           resources:
             requests:
               cpu: "250m"
@@ -37,17 +30,14 @@ spec:
               readOnly: true
           env:
             - name: STORAGE_ADDRESS
-              value: "templated"
+              value: {{ STORAGE_ADDRESS }}
             - name: STORAGE_USERNAME
-              value: "templated"
+              value: {{ STORAGE_USERNAME }}
             - name: STORAGE_PASSWORD
-              value: "templated"
-            - name: CLUSTER_NAME
-              value: "templated"
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+              value: {{ STORAGE_PASSWORD }}
+            - name: STORAGE_CONTAINER
+              value: {{ STORAGE_CONTAINER }}
+
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:

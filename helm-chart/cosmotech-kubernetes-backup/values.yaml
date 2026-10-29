@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (C) 2022-2026 Cosmo Tech
+# SPDX-License-Identifier: MIT
+
+# Override the chart name
+nameOverride: ""
+fullnameOverride: ""
+
+# Customize workload
+workload:
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 2Gi
+  image:
+    repository: ghcr.io/cosmo-tech/bkup
+    pullPolicy: IfNotPresent
+    tag: "latest"
+    pullSecrets: []
+
+
+# Backup jobs behaviors
+backup:
+  # Cron expression to specify when to run the jobs
+  cron: ""
+  # Cron timeZone
+  timeZone: "Europe/Paris"
+  # Number of successful jobs to keep in history
+  successfulJobsHistoryLimit: 10
+  # Number of failed jobs to keep in history
+  failedJobsHistoryLimit: 10
+  # Remote destination where to send backups
+  # e.g:  
+  # destination:
+  #   address: azure://bucket/blob
+  #   username: myuser
+  #   passwordSecret:
+  #     - name: mysecret
+  #     - key: password
+  destination:
+    address: ""
+    username: ""
+    passwordSecret:
+      name: mysecret
+      key: password
+  # List of PostgreSQL to backup
+  # e.g:  
+  # - address: postgresql.namespace.svc.cluster.local
+  #   port: 5432
+  #   database: postgres
+  #   username: postgres
+  #   passwordSecret:
+  #     - name: mysecret
+  #     - key: postgres-password
+  #   image: "myregistry/postgresql:tag"
+  postgresql:
+    - address: postgresql.namespace.svc.cluster.local
+      port: 5432
+      database: postgres
+      username: postgres
+      # Secret where to find the password to connect to PostgreSQL (clear password is not allowed in this values file)
+      passwordSecret:
+        name: mysecret
+        key: password
+      # Docker image to use as PostgreSQL client
+      image: "myregistry/postgresql:tag"
