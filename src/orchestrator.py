@@ -20,8 +20,17 @@ def job_volumes():
 
         mounts_map = {}
 
-        # List of namespaces to backup
-        namespaces = os.getenv('BKUP_TARGET_NAMESPACES', kube.list_namespaces())
+        print("fetching all informations to perform backup...")
+
+        # User-defined list of namespaces & fallback on list of all namespaces of the cluster
+        namespaces_env = os.getenv('BKUP_TARGET_NAMESPACES')
+        namespaces = []
+        if namespaces_env:
+            for ns in namespaces_env.split(','):
+                namespaces.append(ns.strip())
+        else:
+            namespaces = kube.list_namespaces()
+
         for n in namespaces:
             mounts_map[n] = []
 
@@ -33,28 +42,28 @@ def job_volumes():
                 for w in deployments:
                     mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
                     for m in mounts:
+                        print(f"found {n}/{p}")
                         mounts_map[n].append(m)
 
                 for w in statefulsets:
                     mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
                     for m in mounts:
+                        print(f"found {n}/{p}")
                         mounts_map[n].append(m)
 
-
-
-        image                   = os.getenv('BKUP_IMAGE')
-        image_pull_policy       = os.getenv('BKUP_IMAGE_PULL_POLICY')
-        storage_address         = os.getenv('BKUP_STORAGE_ADDRESS')
+        image                   = os.getenv('BKUP_IMAGE', "ghcr.io/cosmo-tech/bkup:ci")
+        image_pull_policy       = os.getenv('BKUP_IMAGE_PULL_POLICY', "Always")
+        storage_protocol        = os.getenv('BKUP_STORAGE_PROTOCOL')
+        storage_endpoint        = os.getenv('BKUP_STORAGE_ENDPOINT')
+        storage_root            = os.getenv('BKUP_STORAGE_ROOT')
         storage_username        = os.getenv('BKUP_STORAGE_USERNAME')
         storage_password        = os.getenv('BKUP_STORAGE_PASSWORD')
-        storage_container       = os.getenv('BKUP_STORAGE_CONTAINER')
         
-        
-        print(storage_address)
-        print(storage_username)
-        print(storage_password)
-        print(storage_container)
-        
+        # print(image)
+        # print(image_pull_policy)
+        # print(storage_address)
+        # print(storage_username)
+        # print(storage_password)
 
         job_template_path="templates/volume.exporter.job.yaml"
         if not os.path.exists(job_template_path):
@@ -71,39 +80,34 @@ def job_volumes():
                     workload = m.get("workload")
                     container = m.get("container")
                     volume = m.get("volume")
-                    mountpath = m.get("mountpath")
+                    mount_path = m.get("mount_path")
 
                     print(f"    - pvc: {pvc}")
                     print(f"      workload: {workload}")
                     print(f"      container: {container}")
                     print(f"      volume: {volume}")
-                    print(f"      mountpath: {mountpath}")
+                    print(f"      mount_path: {mount_path}")
 
-                    job_name = f"{pvc}{volume}"
-                    job_name_formatted = f"bkup-{hashlib.md5(job_name.encode()).hexdigest()}"
-                    # kube.create_job(template_path=job_template_path,
-                    #                 image=image,
-                    #                 image_pull_policy=image_pull_policy,
-                    #                 namespace=ns,
-                    #                 job_name=job_name,
-                    #                 pvc_name=pvc,
-                    #                 # node_name=node_name,
-                    #                 mount_path=mount_path,
-                    #                 storage_address=storage_address,
-                    #                 storage_username=storage_username,
-                    #                 storage_password=storage_password,
-                    #                 storage_container=storage_container,
-                    #                 )
+                    job_name = f"{pvc}-{container}-{volume}"
+                    job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
+                    job_name_formatted = f"bkup-{job_name_hash[:63]}"
 
-
-        # IMAGE
-        # IMAGE_PULL_POLICY
-        # JOB_NAME
-        # MOUNTED_PATH
-        # NAMESPACE
-        # NODE_NAME
-        # PVC_NAME
-
+                    archive_name = f"{pvc}_{volume}"
+                    kube.create_job(template_path=job_template_path,
+                                    image=image,
+                                    image_pull_policy=image_pull_policy,
+                                    namespace=ns,
+                                    job_name=job_name_formatted,
+                                    pvc_name=pvc,
+                                    # node_name=node_name,
+                                    mount_path=mount_path,
+                                    storage_protocol=storage_protocol,
+                                    storage_endpoint=storage_endpoint,
+                                    storage_root=storage_root,
+                                    storage_username=storage_username,
+                                    storage_password=storage_password,
+                                    archive_name=archive_name,
+                                    )
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")

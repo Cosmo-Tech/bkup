@@ -15,11 +15,15 @@ dependencies = [
     "psutil",
     "PyYAML",
     "jinja2",
+    "fsspec",
+    "adlfs",
+    "s3fs",
+    "gcsfs",
 ]
 
 
 [project.scripts]
-bkup = "src.operator:main"
+bkup = "src.orchestrator:main"
 
 
 [tool.setuptools.packages.find]

@@ -40,19 +40,24 @@ backup:
   # Remote destination where to send backups
   # e.g:  
   # destination:
-  #   address: azure://bucket/blob
+  #   protocol: "s3"
+  #   endpoint: "mys3.example.com"
+  #   root: "mycontainer"
   #   username: myuser
   #   passwordSecret:
   #     - name: mysecret
   #     - key: password
-  #   container: mycontainer
   destination:
-    address: ""
+    # Fsspec known protocols: s3, abfs (azure), gcs, sftp, webdav, file, etc... (https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.available_protocols)
+    protocol: ""
+    # Optional FQDN or IP in case of self-hosted s3
+    endpoint: ""
+    # Root path of the remote storage (container)
+    root: ""
     username: ""
     passwordSecret:
-      name: mysecret
-      key: password
-    container: ""
+      name: ""
+      key: ""
 
   # Configure the job backup type for PostgreSQL
   # e.g:  

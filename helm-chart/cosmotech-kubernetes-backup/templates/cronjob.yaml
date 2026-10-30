@@ -28,8 +28,12 @@ spec:
               resources:
                 {{- toYaml .Values.workload.resources | nindent 16 }}
               env:
-                - name: BKUP_STORAGE_ADDRESS
-                  value: {{ .Values.backup.destination.address }}
+                - name: BKUP_STORAGE_PROTOCOL
+                  value: {{ .Values.backup.destination.protocol }}
+                - name: BKUP_STORAGE_ENDPOINT
+                  value: {{ .Values.backup.destination.endpoint }}
+                - name: BKUP_STORAGE_ROOT
+                  value: {{ .Values.backup.destination.root }}
                 - name: BKUP_STORAGE_USERNAME
                   value: {{ .Values.backup.destination.username }}
                 - name: BKUP_STORAGE_PASSWORD
@@ -48,6 +52,11 @@ spec:
 
           {{- with .Values.workload.image.pullSecrets }}
           imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- with .Values.workload.nodeSelector }}
+          nodeSelector:
             {{- toYaml . | nindent 12 }}
           {{- end }}
 

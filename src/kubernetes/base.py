@@ -83,7 +83,7 @@ class KubernetesBase:
     #                     "type": 'deployment',
     #                     "name": deployment.metadata.name,
     #                     "container": c.name,
-    #                     "mountpath": m.mount_path
+    #                     "mount_path": m.mount_path
     #                     }
     #                 results.append(result)
     #     except Exception as e:
@@ -102,7 +102,7 @@ class KubernetesBase:
     #                     "type": 'statefulset',
     #                     "name": statefulset.metadata.name,
     #                     "container": c.name,
-    #                     "mountpath": m.mount_path
+    #                     "mount_path": m.mount_path
     #                     }
     #                 results.append(result)
     #     except Exception as e:
@@ -215,7 +215,7 @@ class KubernetesBase:
                             "workload":     w_name,
                             "container":    c.name,
                             "volume":       vm.name,
-                            "mountpath":    vm.mount_path
+                            "mount_path":    vm.mount_path
                             }
                         results.append(result)
         except Exception as e:
@@ -232,10 +232,12 @@ class KubernetesBase:
         pvc_name: str,
         # node_name: str,
         mount_path: str,
-        storage_address: str,
+        storage_protocol: str,
+        storage_endpoint: str,
+        storage_root: str,
         storage_username: str,
         storage_password: str,
-        storage_container: str
+        archive_name: str
         ):
         """Create a Kubernetes Job from a given manifest."""
         raw_yaml = Path(template_path).read_text(encoding="utf-8")
@@ -246,17 +248,20 @@ class KubernetesBase:
             JOB_NAME=job_name,
             PVC_NAME=pvc_name,
             # NODE_NAME=node_name,
-            MOUNTED_PATH=mount_path,
-            STORAGE_ADDRESS=storage_address,
+            MOUNT_PATH=mount_path,
+            STORAGE_PROTOCOL=storage_protocol,
+            STORAGE_ENDPOINT=storage_endpoint,
+            STORAGE_ROOT=storage_root,
             STORAGE_USERNAME=storage_username,
             STORAGE_PASSWORD=storage_password,
-            STORAGE_CONTAINER=storage_container,
+            ARCHIVE_NAME=archive_name,
             )
 
         body = yaml.safe_load(rendered_yaml)
 
         try:
-            return self.batch_v1.create_namespaced_job(namespace=namespace, body=body)
+            print(f"starting job {job_name}...")
+            self.batch_v1.create_namespaced_job(namespace=namespace, body=body)
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to create job {namespace}/{job_name}: {e}")
 

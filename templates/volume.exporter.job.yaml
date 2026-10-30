@@ -14,9 +14,9 @@ spec:
           image: {{ IMAGE }}
           imagePullPolicy: {{ IMAGE_PULL_POLICY }}
           # command: ["python", "-m", "src.exporter"]
-          # args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
-          # command: ["python", "-m", "src.operator"]
-          command: ["echo", "test"]
+          # args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNT_PATH }}", "--type", "volume"]
+          command: ["python", "-m", "src.exporter"]
+          # command: ["env"]
           resources:
             requests:
               cpu: "250m"
@@ -26,17 +26,23 @@ spec:
               memory: "512Mi"
           volumeMounts:
             - name: volume-to-backup
-              mountPath: "{{ MOUNTED_PATH }}"
+              mountPath: "{{ MOUNT_PATH }}"
               readOnly: true
           env:
-            - name: STORAGE_ADDRESS
-              value: {{ STORAGE_ADDRESS }}
-            - name: STORAGE_USERNAME
+            - name: BKUP_STORAGE_PROTOCOL
+              value: {{ STORAGE_PROTOCOL }}
+            - name: BKUP_STORAGE_ENDPOINT
+              value: {{ STORAGE_ENDPOINT }}
+            - name: BKUP_STORAGE_ROOT
+              value: {{ STORAGE_ROOT }}
+            - name: BKUP_STORAGE_USERNAME
               value: {{ STORAGE_USERNAME }}
-            - name: STORAGE_PASSWORD
+            - name: BKUP_STORAGE_PASSWORD
               value: {{ STORAGE_PASSWORD }}
-            - name: STORAGE_CONTAINER
-              value: {{ STORAGE_CONTAINER }}
+            - name: BKUP_ARCHIVE_NAME
+              value: {{ ARCHIVE_NAME }}
+            - name: BKUP_MOUNT_PATH
+              value: {{ MOUNT_PATH }}
 
       volumes:
         - name: volume-to-backup
