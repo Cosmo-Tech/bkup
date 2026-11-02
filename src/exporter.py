@@ -36,18 +36,18 @@ def remote_stream():
             "password": password,
         }
 
-        # Overwrite default fsspec endpoint (= s3.amazonaws.com) if it has been defined by user
-        if endpoint:
-            storage_options["client_kwargs"] = {"endpoint_url": endpoint}
-
         print(f"backup informations:")
         print(f"protocol........{protocol}")
-        print(f"endpoint........{endpoint}")
         print(f"root............{root}")
         print(f"archive_name....{archive_name}")
         print(f"mount_path......{mount_path}")
         print(f"address.........{address}")
         print(f"options.........{str(storage_options).replace(password, "*********") }")
+
+        # Overwrite default fsspec endpoint (= s3.amazonaws.com) if it has been defined by user
+        if endpoint:
+            storage_options["client_kwargs"] = {"endpoint_url": endpoint}
+            print(f"endpoint........{endpoint}")
 
         fs, target_path = fsspec.core.url_to_fs(address, **storage_options)
 
