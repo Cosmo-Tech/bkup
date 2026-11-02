@@ -145,7 +145,7 @@ class KubernetesBase:
         storage_password: str,
         archive_name: str
         ):
-        """Create a Kubernetes Job from a given manifest."""
+        """Create a Kubernetes job from a given manifest."""
         raw_yaml = Path(template_path).read_text(encoding="utf-8")
         rendered_yaml = jinja2.Template(raw_yaml).render(
             NAMESPACE=namespace,
@@ -172,6 +172,15 @@ class KubernetesBase:
             print(f"error: {utils.current_function()}: failed to create job {namespace}/{job_name}: {e}")
 
 
+    def delete_job(self, namespace: str, job_name: str):
+        """Delete a Kubernetes job"""
+        try:
+            print(f"deleting job {namespace}/{job_name}...")
+            self.batch_v1.delete_namespaced_job(namespace=namespace, name=job_name, propagation_policy="Foreground")
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to delete job {namespace}/{job_name}: {e}")
+
+
     def wait_job_completion(self, namespace: str, job_name: str) -> bool:
         """Wait for a job to complete"""
         print(f"waiting completion of job {job_name}...")
@@ -191,7 +200,7 @@ class KubernetesBase:
 
                 time.sleep(3)
         except Exception as e:
-            print(f"error: failed to wait for completion of job {job_name}: {e}")
+            print(f"error: {utils.current_function()}: failed to wait for completion of job {job_name}: {e}")
             return False
 
 
@@ -206,7 +215,7 @@ class KubernetesBase:
 
             return w.spec.replicas
         except Exception as e:
-            print(f"error: failed to get replicas quantity of {workload_kind}/{workload_name}: {e}")
+            print(f"error: {utils.current_function()}: failed to get replicas quantity of {workload_kind}/{workload_name}: {e}")
             return None
 
 
@@ -222,4 +231,4 @@ class KubernetesBase:
 
             print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
         except Exception as e:
-            print(f"error: failed to scale {workload_kind}/{workload_name}: {e}")
+            print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
