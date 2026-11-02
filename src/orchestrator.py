@@ -60,7 +60,7 @@ from src.utils import general as utils
 #         storage_root            = os.getenv('BKUP_STORAGE_ROOT')
 #         storage_username        = os.getenv('BKUP_STORAGE_USERNAME')
 #         storage_password        = os.getenv('BKUP_STORAGE_PASSWORD')
-        
+
 #         # print(image)
 #         # print(image_pull_policy)
 #         # print(storage_address)
@@ -127,11 +127,11 @@ from src.utils import general as utils
 
 
 
-def restore_workload_on_signal(signum, frame):
-    """Restore workload replicas in case of killed execution"""
-    print(f"\n\nTERMINATION SIGNAL ({signum}) RECEIVED")
-    kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
-    sys.exit(1)
+# def restore_workload_on_signal(signum, frame):
+#     """Restore workload replicas in case of killed execution"""
+#     print(f"\n\nTERMINATION SIGNAL ({signum}) RECEIVED")
+#     kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
+#     sys.exit(1)
 
 
 def job_volumes():
@@ -197,9 +197,19 @@ def job_volumes():
                         print(f"mount_path...........{mount_path}")
                         print(f"original_replicas....{original_replicas}")
 
-                        # Ensure replicas are restored in case of killed execution
+                        # Ensure replicas are restored in case of cancelled execution
+                        def restore_workload_on_signal(signum, frame):
+                            print(f"\n\nTermination signal ({signum}) received")
+                            print(f"Aborting backup job and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}")
+                            kube.scale_workload_replicas(
+                                namespace=n,
+                                workload_kind=workload_kind,
+                                workload_name=workload_name,
+                                replicas=original_replicas,
+                            )
+                            sys.exit(1)
                         signal.signal(signal.SIGTERM, restore_workload_on_signal)
-                        # signal.signal(signal.SIGTERM, kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas))
+                        signal.signal(signal.SIGINT, restore_workload_on_signal)
 
                         # Scale down workload to be able claiming PVC
                         kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
@@ -210,21 +220,22 @@ def job_volumes():
                         job_name_formatted = f"bkup-{job_name_hash[:44]}-{now_str}"
 
                         archive_name = f"{pvc}_{volume}"
-                        kube.create_job(template_path=job_template_path,
-                                        image=image,
-                                        image_pull_policy=image_pull_policy,
-                                        namespace=n,
-                                        job_name=job_name_formatted,
-                                        pvc_name=pvc,
-                                        # node_name=node_name,
-                                        mount_path=mount_path,
-                                        storage_protocol=storage_protocol,
-                                        storage_endpoint=storage_endpoint,
-                                        storage_root=storage_root,
-                                        storage_username=storage_username,
-                                        storage_password=storage_password,
-                                        archive_name=archive_name,
-                                        )
+                        kube.create_job(
+                            template_path=job_template_path,
+                            image=image,
+                            image_pull_policy=image_pull_policy,
+                            namespace=n,
+                            job_name=job_name_formatted,
+                            pvc_name=pvc,
+                            # node_name=node_name,
+                            mount_path=mount_path,
+                            storage_protocol=storage_protocol,
+                            storage_endpoint=storage_endpoint,
+                            storage_root=storage_root,
+                            storage_username=storage_username,
+                            storage_password=storage_password,
+                            archive_name=archive_name,
+                            )
 
                         kube.wait_job_completion(namespace=n, job_name=job_name_formatted)
 
