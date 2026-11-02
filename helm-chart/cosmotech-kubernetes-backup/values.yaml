@@ -21,10 +21,9 @@ workload:
       ephemeral-storage: 2Gi
   image:
     repository: ghcr.io/cosmo-tech/bkup
-    pullPolicy: IfNotPresent
     tag: "latest"
     pullSecrets: []
-
+    pullPolicy: IfNotPresent
 
 # Backup jobs behaviors
 backup:
@@ -45,8 +44,8 @@ backup:
   #   root: "mycontainer"
   #   username: myuser
   #   passwordSecret:
-  #     - name: mysecret
-  #     - key: password
+  #       name: mysecret
+  #       key: password
   destination:
     # Fsspec known protocols: s3, abfs (azure), gcs, sftp, webdav, file, etc... (https://filesystem-spec.readthedocs.io/en/latest/api.html#fsspec.available_protocols)
     protocol: ""
@@ -66,9 +65,14 @@ backup:
   #   database: postgres
   #   username: postgres
   #   passwordSecret:
-  #     - name: mysecret
-  #     - key: postgres-password
-  #   image: "myregistry/postgresql:tag"
+  #       name: mysecret
+  #       key: postgres-password
+  #   image:
+  #     repository: myregistry/postgresql
+  #     pullPolicy: IfNotPresent
+  #     tag: "latest"
+  #     pullSecrets: []
+  #   namespace: default
   postgresql:
     - address: postgresql.namespace.svc.cluster.local
       port: 5432
@@ -78,8 +82,14 @@ backup:
       passwordSecret:
         name: mysecret
         key: password
-      # Docker image to use as PostgreSQL client
-      image: "myregistry/postgresql:tag"
+      # Image to use as PostgreSQL client
+      image:
+        repository: myregistry/postgresql
+        tag: "latest"
+        pullSecrets: []
+        pullPolicy: IfNotPresent
+      # Namespace where to run the Kubernetes job
+      namespace: ""
 
   # Configure the job backup type for volumes
   # e.g:

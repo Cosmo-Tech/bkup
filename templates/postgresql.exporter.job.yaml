@@ -1,5 +1,5 @@
 # ----- ARCHITECTURE -----
-# database (running psql instance) --> database-dumper (pg_dump) --> [UNIX pipe] --> worker (python code to transfer data to remote storage)
+# database (running psql instance) --> database-dumper (pg_dump) --UNIX pipe-> Python exporter
 # ------------------------
 
 apiVersion: batch/v1
@@ -12,12 +12,13 @@ spec:
   ttlSecondsAfterFinished: 3600
   template:
     spec:
-      restartPolicy: Never    
+      restartPolicy: Never
       containers:
         # --- MAIN CONTAINER: expoter.py ---
         - name: worker
-          image: ghcr.io/cosmo-tech/bkup:latest
-          imagePullPolicy: Always
+          image: {{ IMAGE }}
+          imagePullPolicy: {{ IMAGE_PULL_POLICY }}
+          # imagePullSecrets: {{ IMAGE_PULL_SECRETS }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -35,7 +36,7 @@ spec:
               echo "Getting backup from database-dumper..."
 
               # Use the pipe as path arg for the exporter 
-              python3 -m src.exporter --pvc "{{ PVC_NAME }}" --path "$pipe" --type pg_dump
+              python3 -m src.exporter
           resources:
             requests:
               cpu: "250m"
@@ -47,26 +48,28 @@ spec:
             - name: shared
               mountPath: /shared
           env:
-            - name: STORAGE_ADDRESS
-              value: "templated"
-            - name: STORAGE_USERNAME
-              value: "templated"
-            - name: STORAGE_PASSWORD
-              value: "templated"
-            - name: CLUSTER_NAME
-              value: "templated"
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+            - name: BKUP_STORAGE_PROTOCOL
+              value: {{ STORAGE_PROTOCOL }}
+            - name: BKUP_STORAGE_ENDPOINT
+              value: {{ STORAGE_ENDPOINT }}
+            - name: BKUP_STORAGE_ROOT
+              value: {{ STORAGE_ROOT }}
+            - name: BKUP_STORAGE_USERNAME
+              value: {{ STORAGE_USERNAME }}
+            - name: BKUP_STORAGE_PASSWORD
+              value: {{ STORAGE_PASSWORD }}
+            - name: BKUP_ARCHIVE_NAME
+              value: {{ ARCHIVE_NAME }}
 
         # --- SIDECAR CONTAINER #2: Dump the database (with the original image binaries) ---
         - name: database-dumper
-          image: "{{ POSTGRES_IMAGE }}" # Get the real used image used
+          image: "{{ POSTGRESQL_IMAGE }}" # Get the real used image used
+          imagePullPolicy: {{ POSTGRESQL_IMAGE_PULL_POLICY }}
+          # imagePullSecrets: {{ POSTGRESQL_IMAGE_PULL_SECRETS }}
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This script create a UNIX pipe to talk with the worker
+              # This script create a UNIX pipe to send data to the worker
 
               pipe='/shared/pg_pipe'
               current_db='/shared/current_db'

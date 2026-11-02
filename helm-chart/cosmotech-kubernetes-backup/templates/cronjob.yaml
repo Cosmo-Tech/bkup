@@ -28,6 +28,12 @@ spec:
               resources:
                 {{- toYaml .Values.workload.resources | nindent 16 }}
               env:
+                - name: BKUP_IMAGE
+                  value: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
+                - name: BKUP_IMAGE_PULL_POLICY
+                  value: {{ .Values.workload.image.pullPolicy }}
+
+                # Destination storage
                 - name: BKUP_STORAGE_PROTOCOL
                   value: {{ .Values.backup.destination.protocol }}
                 - name: BKUP_STORAGE_ENDPOINT
@@ -43,12 +49,15 @@ spec:
                       key: {{ .Values.backup.destination.passwordSecret.key }}
                 - name: BKUP_STORAGE_CONTAINER
                   value: {{ .Values.backup.destination.container }}
-                - name: BKUP_TARGET_NAMESPACES
+
+                # Volume backup job
+                - name: BKUP_VOLUMES_NAMESPACES
                   value: {{ .Values.backup.volume.namespaces | toJson | quote }}
-                - name: BKUP_IMAGE
-                  value: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
-                - name: BKUP_IMAGE_PULL_POLICY
-                  value: {{ .Values.workload.image.pullPolicy }}
+
+                # PostgreSQL backup job
+                - name: BKUP_POSTGRESQL_BLOC
+                  value: |
+                    {{- toYaml .Values.backups.postgresql | nindent 20 }}
 
           {{- with .Values.workload.image.pullSecrets }}
           imagePullSecrets:
