@@ -13,10 +13,7 @@ spec:
         - name: worker
           image: {{ IMAGE }}
           imagePullPolicy: {{ IMAGE_PULL_POLICY }}
-          # command: ["python", "-m", "src.exporter"]
-          # args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNT_PATH }}", "--type", "volume"]
           command: ["python", "-m", "src.exporter"]
-          # command: ["env"]
           resources:
             requests:
               cpu: "250m"

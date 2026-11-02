@@ -1,4 +1,5 @@
 import os
+import time
 import yaml
 import jinja2
 from pathlib import Path
@@ -72,58 +73,6 @@ class KubernetesBase:
             return []
 
 
-    # def list_deployment_mountpoints(self, namespace: str, deployment: str) -> list:
-    #     """List mount points of a given Deployment"""
-    #     results = []
-    #     try:
-    #         deployment = self.apps_v1.read_namespaced_deployment(namespace=namespace, name=deployment)
-    #         for c in deployment.spec.template.spec.containers:
-    #             for m in c.volume_mounts:
-    #                 result = {
-    #                     "type": 'deployment',
-    #                     "name": deployment.metadata.name,
-    #                     "container": c.name,
-    #                     "mount_path": m.mount_path
-    #                     }
-    #                 results.append(result)
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: failed to list mountpoints: {e}")
-    #     return results
-
-
-    # def list_statefulset_mountpoints(self, namespace: str, statefulset: str) -> list:
-    #     """List mountpoints of a given StatefulSet"""
-    #     results = []
-    #     try:
-    #         statefulset = self.apps_v1.read_namespaced_stateful_set(namespace=namespace, name=statefulset)
-    #         for c in statefulset.spec.template.spec.containers:
-    #             for m in c.volume_mounts:
-    #                 result = {
-    #                     "type": 'statefulset',
-    #                     "name": statefulset.metadata.name,
-    #                     "container": c.name,
-    #                     "mount_path": m.mount_path
-    #                     }
-    #                 results.append(result)
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: failed to list mount points: {e}")
-    #     return results
-
-
-    # def merge_mountpoints_list(self, list1: str, list2: str) -> list: 
-    #     """Merge given mountpoints lists in a single one"""
-    #     try:
-    #         results = []
-
-    #         for i in list1:
-    #             # if (i.name not in list2) or (i.name in list2 and i.type not in list2):
-    #             results.append(i)
-
-
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: failed to merge mountpoints lists: {e}")
-    #         return []
-
     def list_pvc(self, namespace: str) -> list:
         """List all PVC of a namespace"""
         results = []
@@ -137,65 +86,21 @@ class KubernetesBase:
         return results
 
 
-    # def merge_mountpoints_lists(self, namespace: str, pvc_name: str) -> list:
-    #     """Look for PVC from Deployments and StatefulSets"""
-    #     results = []
-    #     try:
-    #         deployments = self.apps_v1.list_namespaced_deployment(namespace=namespace)
-    #         for d in deployments.items:
-    #             mounts = self.map_mountpoints_pvc_workload(pvc_name, d)
-    #             for m in mounts:
-    #                 m["kind"] = f"deployment"
-    #                 results.append(m)
-
-    #         statefulsets = self.apps_v1.list_namespaced_stateful_set(namespace=namespace)
-    #         for s in statefulsets.items:
-    #             mounts = self.map_mountpoints_pvc_workload(pvc_name, s)
-    #             for m in mounts:
-    #                 m["kind"] = f"statefulset"
-    #                 results.append(m)
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: {e}")
-    #     return results
-
-
-    # def _list_pvc_mountpoints(self, pvc_name: str, pod_spec) -> list:
-    #     """Get all mounted paths in a PVC"""
-    #     results = []
-    #     pod_volume_name = None
-
-    #     if not pod_spec or not pod_spec.volumes:
-    #         return results
-
-    #     for vol in pod_spec.volumes:
-    #         if vol.persistent_volume_claim and vol.persistent_volume_claim.claim_name == pvc_name:
-    #             pod_volume_name = vol.name
-    #             break
-
-    #     if not pod_volume_name:
-    #         return results
-
-    #     for container in pod_spec.containers:
-    #         if hasattr(container, "volume_mounts") and container.volume_mounts:
-    #             for mount in container.volume_mounts:
-    #                 if mount.name == pod_volume_name:
-    #                     results.append(
-    #                         {
-    #                             "container_name": container.name,
-    #                             "mount_path": mount.mount_path,
-    #                             "read_only": mount.read_only if mount.read_only is not None else False,
-    #                         }
-    #                     )
-    #     return results
-
 
     def map_mountpoints_pvc_workload(self, pvc_name: str, workload: str) -> list:
-        """Get mounted paths from combination of PVC name + workload manifest (deployment, statefulset)"""
+        """Get mounted paths from combination of PVC name + workload manifest (= deployment, statefulset)"""
         results = []
         try:
             v_name = None
             w_name = workload.metadata.name
             w_spec = workload.spec.template.spec
+
+            w_kind = getattr(workload, "kind", None)
+            if not w_kind:
+                # Get kind from class name "V1Deployment", "V1StatefulSet"
+                class_name = workload.__class__.__name__
+                w_kind = class_name.replace("V1", "")
+
             if not w_spec.volumes:
                 return results
 
@@ -211,11 +116,12 @@ class KubernetesBase:
                 for vm in c.volume_mounts:
                     if v_name == vm.name:
                         result = {
-                            "pvc":          pvc_name,
-                            "workload":     w_name,
-                            "container":    c.name,
-                            "volume":       vm.name,
-                            "mount_path":    vm.mount_path
+                            "pvc":              pvc_name,
+                            "workload_kind":    w_kind,
+                            "workload_name":    w_name,
+                            "container":        c.name,
+                            "volume":           vm.name,
+                            "mount_path":       vm.mount_path
                             }
                         results.append(result)
         except Exception as e:
@@ -260,11 +166,60 @@ class KubernetesBase:
         body = yaml.safe_load(rendered_yaml)
 
         try:
-            print(f"starting job {job_name}...")
+            print(f"starting job {namespace}/{job_name}...")
             self.batch_v1.create_namespaced_job(namespace=namespace, body=body)
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to create job {namespace}/{job_name}: {e}")
 
 
+    def wait_job_completion(self, namespace: str, job_name: str) -> bool:
+        """Wait for a job to complete"""
+        print(f"waiting completion of job {job_name}...")
+
+        try:
+            start_time = time.time()
+            while time.time() - start_time < 600:
+                job = self.batch_v1.read_namespaced_job(name=job_name, namespace=namespace)
+
+                if job.status.succeeded and job.status.succeeded > 0:
+                    print(f"success: completed job {namespace}/{job_name}")
+                    return True
+
+                if job.status.failed and job.status.failed > 0:
+                    print(f"error: failed job {namespace}/{job_name}")
+                    return False
+
+                time.sleep(3)
+        except Exception as e:
+            print(f"error: failed to wait for completion of job {job_name}: {e}")
+            return False
 
 
+    def get_workload_replicas(self, namespace: str, workload_kind: str, workload_name: str) -> int:
+        """Get current workload (= deployment, statefulset) replicas quantity"""
+        try:
+            if workload_kind.lower() == "deployment":
+                w = self.apps_v1.read_namespaced_deployment(name=workload_name, namespace=namespace)
+
+            elif workload_kind.lower() == "statefulset":
+                w = self.apps_v1.read_namespaced_stateful_set(name=workload_name, namespace=namespace)
+
+            return w.spec.replicas
+        except Exception as e:
+            print(f"error: failed to get replicas quantity of {workload_kind}/{workload_name}: {e}")
+            return None
+
+
+    def scale_workload_replicas(self, namespace: str, workload_kind: str, workload_name: str, replicas: int):
+        """Scale a workload (= deployment, statefulset) to given replicas quantity"""
+        body = {"spec": {"replicas": replicas}}
+        try:
+            if workload_kind.lower() == "deployment":
+                self.apps_v1.patch_namespaced_deployment(name=workload_name, namespace=namespace, body=body)
+
+            elif workload_kind.lower() == "statefulset":
+                self.apps_v1.patch_namespaced_stateful_set(name=workload_name, namespace=namespace, body=body)
+
+            print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
+        except Exception as e:
+            print(f"error: failed to scale {workload_kind}/{workload_name}: {e}")

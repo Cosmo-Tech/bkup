@@ -16,7 +16,7 @@ def remote_stream():
 
         mount_path          = os.getenv('BKUP_MOUNT_PATH')
         if not os.path.exists(mount_path):
-            raise FileNotFoundError(f"failed to find source directory '{mount_path}'")
+            raise FileNotFoundError(f"failed to find source path '{mount_path}'")
 
         # Universal URL working with all drivers
         address = f"{protocol}://{root}/{archive_name}"
@@ -40,19 +40,19 @@ def remote_stream():
         if endpoint:
             storage_options["client_kwargs"] = {"endpoint_url": endpoint}
 
-        print(f"backup information:")
-        print(f"protocol:       {protocol}")
-        print(f"endpoint:       {endpoint}")
-        print(f"root:           {root}")
-        print(f"archive_name:   {archive_name}")
-        print(f"mount_path:     {mount_path}")
-        print(f"address:        {address}")
-        print(f"options:        {str(storage_options).replace(password, "*********") }")
+        print(f"backup informations:")
+        print(f"protocol........{protocol}")
+        print(f"endpoint........{endpoint}")
+        print(f"root............{root}")
+        print(f"archive_name....{archive_name}")
+        print(f"mount_path......{mount_path}")
+        print(f"address.........{address}")
+        print(f"options.........{str(storage_options).replace(password, "*********") }")
 
         fs, target_path = fsspec.core.url_to_fs(address, **storage_options)
 
-        print(f"fs:             {fs}")
-        print(f"target_path:    {target_path}")
+        # print(f"fs:             {fs}")
+        print(f"target_path.....{target_path}")
 
         # Open fsspec stream enable to read binaries (which is required for tar)
         with fsspec.open(address, "wb", **storage_options) as remote_stream:
@@ -63,7 +63,7 @@ def remote_stream():
                     full_path = os.path.join(mount_path, item)
                     tar.add(full_path, arcname=item)
 
-        print("backup completed successfully")
+        print("\nbackup completed successfully")
 
     except Exception as e:
         print(f"error: backup execution failed: {e}")
