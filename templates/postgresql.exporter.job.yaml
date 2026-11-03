@@ -18,7 +18,7 @@ spec:
         # --- MAIN CONTAINER: exporter.py ---
         - name: exporter
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
-          imagePullPolicy: {{ BKUP_IMAGE_PULL_POLICY }}
+          imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -30,7 +30,7 @@ spec:
               until [ -p "$pipe" ]; do
                 sleep $timer
                 timer=$(($timer+1))
-                echo "waited $timer"
+                echo "waited $timer sec"
               done
 
               echo "Getting backup from database-dumper..."
@@ -46,28 +46,28 @@ spec:
               memory: "512Mi"
           volumeMounts:
             - name: shared
-              mountPath: {{ MOUNT_PATH }}
+              mountPath: "{{ MOUNT_PATH }}"
           env:
             - name: BKUP_STORAGE_PROTOCOL
-              value: {{ STORAGE_PROTOCOL }}
+              value: "{{ STORAGE_PROTOCOL }}"
             - name: BKUP_STORAGE_ENDPOINT
-              value: {{ STORAGE_ENDPOINT }}
+              value: "{{ STORAGE_ENDPOINT }}"
             - name: BKUP_STORAGE_ROOT
-              value: {{ STORAGE_ROOT }}
+              value: "{{ STORAGE_ROOT }}"
             - name: BKUP_STORAGE_USERNAME
-              value: {{ STORAGE_USERNAME }}
+              value: "{{ STORAGE_USERNAME }}"
             - name: BKUP_STORAGE_PASSWORD
-              value: {{ STORAGE_PASSWORD }}
+              value: "{{ STORAGE_PASSWORD }}"
             - name: BKUP_ARCHIVE_NAME
-              value: {{ ARCHIVE_NAME }}
+              value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
-              value: {{ MOUNT_PATH }}
+              value: "{{ MOUNT_PATH }}"
 
 
         # --- SIDECAR CONTAINER: Dump the database (with real PostgreSQL binaries) ---
         - name: database-dumper
           image: "{{ POSTGRESQL_IMAGE_REPOSITORY }}:{{ POSTGRESQL_IMAGE_TAG }}"
-          imagePullPolicy: {{ POSTGRESQL_IMAGE_PULL_POLICY }}
+          imagePullPolicy: "{{ POSTGRESQL_IMAGE_PULL_POLICY }}"
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -102,8 +102,8 @@ spec:
                 exit 1
               fi
 
-              if [ -z "$PGUSER" ]; then
-                echo "error: PGUSER environment variable is missing."
+              if [ -z "$PGUSERNAME" ]; then
+                echo "error: PGUSERNAME environment variable is missing."
                 exit 1
               fi
 
@@ -112,31 +112,22 @@ spec:
                 exit 1
               fi
 
-              TARGET_HOST="$PGHOST"
-              TARGET_PORT="$PGPORT"
-              TARGET_USER="$PGUSER"
 
               # If PGPASSWORD points to a mounted secret file, read file content
               if [ -f "$PGPASSWORD" ]; then
-                PGPASSWORD=$(cat "$PGPASSWORD")
+                PGPASSWORD=$PGPASSWORD
               fi
 
-              echo "Waiting for remote PostgreSQL at $TARGET_HOST:$TARGET_PORT as user $TARGET_USER..."
-              until pg_isready -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" >/dev/null 2>&1; do
+              echo "Waiting for remote PostgreSQL at $PGHOST:$PGPORT as user $PGUSER..."
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
                 echo "Waiting for database connection..."
                 sleep 2
               done
-              
 
-              # List databases
-              if [ -n "$PGDATABASE" ]; then
-                db_list="$PGDATABASE"
-              else
-                db_list=$(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres'" 2>/dev/null)
-              fi
-
+              # List databases        
+              db_list=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false" 2>/dev/null)
               if [ -z "$db_list" ]; then
-                echo "error: no database found or access denied for user '$TARGET_USER'"
+                echo "error: no database found or access denied for user '$PGUSER'"
                 exit 1
               fi
 
@@ -144,7 +135,7 @@ spec:
               for db in $db_list; do
 
                 # Dump data to pipe
-                pg_dump -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -d "$db" > "$pipe"
+                pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" > "$pipe"
                 dump_exit=$?
 
                 if [ $dump_exit -ne 0 ]; then
@@ -155,10 +146,25 @@ spec:
 
           volumeMounts:
             - name: shared
-              mountPath: {{ MOUNT_PATH }}
+              mountPath: "{{ MOUNT_PATH }}"
           env:
             - name: BKUP_MOUNT_PATH
-              value: {{ MOUNT_PATH }}
+              value: "{{ MOUNT_PATH }}"
+            - name: PGHOST
+              value: "{{ POSTGRESQL_HOST }}"
+            - name: PGPORT
+              value: "{{ POSTGRESQL_PORT }}"
+            - name: PGDATABASE
+              value: "{{ POSTGRESQL_DATABASE }}"
+            - name: PGUSERNAME
+              value: "{{ POSTGRESQL_USERNAME }}"
+            - name: PGPASSWORD
+              value: "{{ POSTGRESQL_PASSWORD }}"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ POSTGRESQL_PASSWORD_SECRET_NAME }}"
+                  key: "{{ POSTGRESQL_PASSWORD_SECRET_KEY }}"
 
       volumes:
         - name: shared
