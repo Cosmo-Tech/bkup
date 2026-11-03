@@ -2,6 +2,7 @@ import os
 import sys
 from datetime import datetime
 
+
 def now() -> str:
     """Return current timestamp formatted as YYYY-MM-DD HH:MM:SS."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

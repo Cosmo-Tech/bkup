@@ -7,8 +7,10 @@ import hashlib
 import datetime
 import signal
 
-from src.kubernetes.base import Kubernetes
-from src.utils import general as utils
+from src.lib.kubernetes import Kubernetes
+import src.lib.utils as utils
+# from src.kubernetes.base import Kubernetes
+# from src.utils import general as utils
 
 
 cluster_context = os.getenv('BKUP_CLUSTER_CONTEXT')
@@ -81,6 +83,8 @@ def job_volumes():
                         # 63 char max for Kubernetes names
                         job_name_formatted = f"bkup-vol-{job_name_hash[:40]}-{now_str}"
 
+                        archive_name = f"{pvc}_{volume}_{now_str}"
+
                         print("")
                         print(f"datetime.............{now_str} ({now_formatted})")
                         print(f"namespace............{n}")
@@ -92,38 +96,20 @@ def job_volumes():
                         print(f"volume...............{volume}")
                         print(f"mount_path...........{mount_path}")
                         print(f"original_replicas....{original_replicas}")
+                        print(f"archive_name.........{archive_name}")
 
                         # Ensure replicas are restored in case of cancelled execution
-                        def restore_workload_on_signal(signum, frame):
+                        def abort_on_signal(signum, frame):
                             print(f"\n\ntermination signal ({signum}) received")
-                            print(f"aborting backup job and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
+                            print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
                             kube.delete_job(namespace=n, job_name=job_name_formatted)
                             sys.exit(1)
-                        signal.signal(signal.SIGTERM, restore_workload_on_signal)
-                        signal.signal(signal.SIGINT, restore_workload_on_signal)
+                        signal.signal(signal.SIGTERM, abort_on_signal)
+                        signal.signal(signal.SIGINT, abort_on_signal)
 
                         # Scale down workload to be able claiming PVC
                         kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
-
-                        archive_name = f"{pvc}_{volume}_{now_str}"
-                        # kube.create_job(
-                        #     template_path=job_template_path,
-                        #     image=image,
-                        #     image_pull_policy=image_pull_policy,
-                        #     namespace=n,
-                        #     job_name=job_name_formatted,
-                        #     storage_protocol=storage_protocol,
-                        #     storage_endpoint=storage_endpoint,
-                        #     storage_root=storage_root,
-                        #     storage_username=storage_username,
-                        #     storage_password=storage_password,
-                        #     archive_name=archive_name,
-                        #     # node_name=node_name,
-                        #     pvc_name=pvc,
-                        #     mount_path=mount_path,
-                        #     )
-
 
                         job_config_specific = {
                             "JOB_NAME":         job_name_formatted,
@@ -179,6 +165,8 @@ def job_postgresql():
             # 63 char max for Kubernetes names
             job_name_formatted = f"bkup-psql-{job_name_hash[:39]}-{now_str}"
 
+            archive_name = f"psql_{address}_{database}_{now_str}"
+
             print("")
             print(f"datetime..............{now_str} ({now_formatted})")
             print(f"namespace.............{job_namespace}")
@@ -193,37 +181,16 @@ def job_postgresql():
             print(f"image_tag.............{image_tag}")
             print(f"image_pull_policy.....{image_pull_policy}")
             print(f"image_pull_secrets....{image_pull_secrets}")
+            print(f"archive_name..........{archive_name}")
 
-
-            archive_name = f"psql_{address}_{database}_{now_str}"
-            # kube.create_job(
-            #     template_path=job_template_path,
-            #     image=f"{image_repository}{image_tag}",
-            #     image_pull_policy=image_pull_policy,
-            #     # image_pull_secret=image_pull_secret,
-            #     namespace=job_namespace,
-            #     job_name=job_name_formatted,
-            #     storage_protocol=storage_protocol,
-            #     storage_endpoint=storage_endpoint,
-            #     storage_root=storage_root,
-            #     storage_username=storage_username,
-            #     storage_password=storage_password,
-            #     archive_name=archive_name,
-            #     # node_name=node_name,
-            #     pvc_name="",
-            #     mount_path="",
-            #     )
-
-            # kube.create_job_postgresql(
-            #     job_config=job_config,
-            #     job_name=job_name_formatted,
-            #     namespace=job_namespace,
-            #     template_path=job_template_path,
-            #     archive_name=archive_name,
-            #     postgresql_image=f"{image_repository}{image_tag}",
-            #     postgresql_image_pull_policy=image_pull_policy,
-            #     postgresql_image_pull_secrets=image_pull_secrets,
-            # )
+            # Ensure replicas are restored in case of cancelled execution
+            def abort_on_signal(signum, frame):
+                print(f"\n\ntermination signal ({signum}) received")
+                print(f"aborting backup job {job_name_formatted}...")
+                kube.delete_job(namespace=n, job_name=job_name_formatted)
+                sys.exit(1)
+            signal.signal(signal.SIGTERM, abort_on_signal)
+            signal.signal(signal.SIGINT, abort_on_signal)
 
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
