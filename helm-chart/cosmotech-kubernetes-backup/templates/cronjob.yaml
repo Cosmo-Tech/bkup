@@ -55,7 +55,7 @@ spec:
                   value: {{ .Values.backup.volume.namespaces | toJson | quote }}
 
                 # PostgreSQL backup job
-                - name: BKUP_POSTGRESQL_BLOC
+                - name: BKUP_POSTGRESQL_VALUES
                   value: |
                     {{- toYaml .Values.backups.postgresql | nindent 20 }}
 

@@ -6,6 +6,26 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Customize workload
+# e.g:
+# workload:
+#   nodeSelector: {}
+#   tolerations: []
+#   affinity: {}
+#   resources:
+#     requests:
+#       cpu: 100m
+#       memory: 128Mi
+#       ephemeral-storage: 50Mi
+#     limits:
+#       cpu: 100m
+#       memory: 128Mi
+#       ephemeral-storage: 2Gi
+#   image:
+#     repository: ghcr.io/cosmo-tech/bkup
+#     tag: "latest"
+#     pullSecrets:
+#       - name: mysecret
+#     pullPolicy: IfNotPresent
 workload:
   nodeSelector: {}
   tolerations: []
@@ -23,13 +43,17 @@ workload:
     repository: ghcr.io/cosmo-tech/bkup
     tag: "latest"
     pullSecrets: []
-    pullPolicy: IfNotPresent
+    pullPolicy: ""
 
 # Backup jobs behaviors
 backup:
   # Cron expression to specify when to run the jobs
+  # e.g:
+  # cron: 00 23 * * 1-5   # => monday-friday at 23pm
   cron: ""
   # Cron timeZone
+  # e.g:
+  # timeZone: "Europe/Paris"
   timeZone: "Europe/Paris"
   # Number of successful jobs to keep in history
   successfulJobsHistoryLimit: 10
@@ -71,23 +95,24 @@ backup:
   #     repository: myregistry/postgresql
   #     pullPolicy: IfNotPresent
   #     tag: "latest"
-  #     pullSecrets: []
+  #     pullSecrets:
+  #       - name: mysecret
   #   namespace: default
   postgresql:
-    - address: postgresql.namespace.svc.cluster.local
+    - address: ""
       port: 5432
-      database: postgres
-      username: postgres
+      database: ""
+      username: ""
       # Secret where to find the password to connect to PostgreSQL (clear password is not allowed in this values file)
       passwordSecret:
-        name: mysecret
-        key: password
+        name: ""
+        key: ""
       # Image to use as PostgreSQL client
       image:
-        repository: myregistry/postgresql
-        tag: "latest"
+        repository: ""
+        tag: ""
         pullSecrets: []
-        pullPolicy: IfNotPresent
+        pullPolicy: ""
       # Namespace where to run the Kubernetes job
       namespace: ""
 

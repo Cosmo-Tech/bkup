@@ -9,10 +9,11 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      imagePullSecrets: {{ BKUP_IMAGE_PULL_SECRETS | tojson }}
       containers:
-        - name: worker
-          image: {{ IMAGE }}
-          imagePullPolicy: {{ IMAGE_PULL_POLICY }}
+        - name: exporter
+          image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
+          imagePullPolicy: {{ BKUP_IMAGE_PULL_POLICY }}
           command: ["python", "-m", "src.exporter"]
           resources:
             requests:

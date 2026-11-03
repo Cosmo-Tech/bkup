@@ -9,8 +9,6 @@ import signal
 
 from src.lib.kubernetes import Kubernetes
 import src.lib.utils as utils
-# from src.kubernetes.base import Kubernetes
-# from src.utils import general as utils
 
 
 cluster_context = os.getenv('BKUP_CLUSTER_CONTEXT')
@@ -22,22 +20,26 @@ kube = Kubernetes(context=cluster_context)
 now_formatted = datetime.datetime.now().strftime('%y-%m-%d %H:%M:%S')       # => yy-mm-dd hh:mm:ss    (to display in logs)
 now_str = now_formatted.replace("-", "").replace(":", "").replace(" ", "")  # => yymmddhhmmss         (to include in technicals names such as files, resources etc...)
 
-image                   = os.getenv('BKUP_IMAGE')
-image_pull_policy       = os.getenv('BKUP_IMAGE_PULL_POLICY', 'Always')
-storage_protocol        = os.getenv('BKUP_STORAGE_PROTOCOL')
-storage_endpoint        = os.getenv('BKUP_STORAGE_ENDPOINT')
-storage_root            = os.getenv('BKUP_STORAGE_ROOT')
-storage_username        = os.getenv('BKUP_STORAGE_USERNAME')
-storage_password        = os.getenv('BKUP_STORAGE_PASSWORD')
+bkup_image_repository       = os.getenv('BKUP_IMAGE_REPOSITORY')
+bkup_image_tag              = os.getenv('BKUP_IMAGE_TAG')
+bkup_image_pull_policy      = os.getenv('BKUP_IMAGE_PULL_POLICY', 'Always')
+bkup_image_pull_secrets     = yaml.safe_load(os.getenv('BKUP_IMAGE_PULL_SECRETS')).get("pullSecrets")
+storage_protocol            = os.getenv('BKUP_STORAGE_PROTOCOL')
+storage_endpoint            = os.getenv('BKUP_STORAGE_ENDPOINT')
+storage_root                = os.getenv('BKUP_STORAGE_ROOT')
+storage_username            = os.getenv('BKUP_STORAGE_USERNAME')
+storage_password            = os.getenv('BKUP_STORAGE_PASSWORD')
 
 job_config_common = {
-    "IMAGE":                image,
-    "IMAGE_PULL_POLICY":    image_pull_policy,
-    "STORAGE_PROTOCOL":     storage_protocol,
-    "STORAGE_ENDPOINT":     storage_endpoint,
-    "STORAGE_ROOT":         storage_root,
-    "STORAGE_USERNAME":     storage_username,
-    "STORAGE_PASSWORD":     storage_password,
+    "BKUP_IMAGE_REPOSITORY":    bkup_image_repository,
+    "BKUP_IMAGE_TAG":           bkup_image_tag,
+    "BKUP_IMAGE_PULL_POLICY":   bkup_image_pull_policy,
+    "BKUP_IMAGE_PULL_SECRETS":  bkup_image_pull_secrets,
+    "STORAGE_PROTOCOL":         storage_protocol,
+    "STORAGE_ENDPOINT":         storage_endpoint,
+    "STORAGE_ROOT":             storage_root,
+    "STORAGE_USERNAME":         storage_username,
+    "STORAGE_PASSWORD":         storage_password,
 }
 
 def job_volumes():
@@ -97,6 +99,7 @@ def job_volumes():
                         print(f"mount_path...........{mount_path}")
                         print(f"original_replicas....{original_replicas}")
                         print(f"archive_name.........{archive_name}")
+                        print("")
 
                         # Ensure replicas are restored in case of cancelled execution
                         def abort_on_signal(signum, frame):
@@ -116,8 +119,8 @@ def job_volumes():
                             "NAMESPACE":        n,
                             "TEMPLATE_PATH":    job_template_path,
                             "ARCHIVE_NAME":     archive_name,
-                            "PVC_NAME":         pvc,
                             "MOUNT_PATH":       mount_path,
+                            "PVC_NAME":         pvc,
                         }
                         job_config = job_config_common | job_config_specific
                         kube.create_job(job_config=job_config)
@@ -148,17 +151,17 @@ def job_postgresql():
 
         postgresql_configs = yaml.safe_load(postgresql_values).get("postgresql")
         for p in postgresql_configs:
-            address             = p.get("address")
-            port                = p.get("port")
-            database            = p.get("database")
-            username            = p.get("username")
-            secret_name         = p.get("passwordSecret").get("name")
-            secret_key          = p.get("passwordSecret").get("key")
-            image_repository    = p.get("image").get("repository")
-            image_pull_policy   = p.get("image").get("pullPolicy")
-            image_pull_secrets  = p.get("image").get("pullSecrets")
-            image_tag           = p.get("image").get("tag")
-            job_namespace       = p.get("namespace")
+            address                         = p.get("address")
+            port                            = p.get("port")
+            database                        = p.get("database")
+            username                        = p.get("username")
+            secret_name                     = p.get("passwordSecret").get("name")
+            secret_key                      = p.get("passwordSecret").get("key")
+            postgresql_image_repository     = p.get("image").get("repository")
+            postgresql_image_tag            = p.get("image").get("tag")
+            postgresql_image_pull_policy    = p.get("image").get("pullPolicy")
+            postgresql_image_pull_secrets   = p.get("image").get("pullSecrets")
+            job_namespace                   = p.get("namespace")
 
             job_name = f"psql-{address}-{database}"
             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
@@ -167,21 +170,24 @@ def job_postgresql():
 
             archive_name = f"psql_{address}_{database}_{now_str}"
 
+            all_image_pull_secrets = bkup_image_pull_secrets + postgresql_image_pull_secrets
+
             print("")
-            print(f"datetime..............{now_str} ({now_formatted})")
-            print(f"namespace.............{job_namespace}")
-            print(f"job_name..............{job_name_formatted} ({job_name})")
-            print(f"address...............{address}")
-            print(f"port..................{port}")
-            print(f"database..............{database}")
-            print(f"username..............{username}")
-            print(f"secret_name...........{secret_name}")
-            print(f"secret_key............{secret_key}")
-            print(f"image_repository......{image_repository}")
-            print(f"image_tag.............{image_tag}")
-            print(f"image_pull_policy.....{image_pull_policy}")
-            print(f"image_pull_secrets....{image_pull_secrets}")
-            print(f"archive_name..........{archive_name}")
+            print(f"datetime.........................{now_str} ({now_formatted})")
+            print(f"namespace........................{job_namespace}")
+            print(f"job_name.........................{job_name_formatted} ({job_name})")
+            print(f"address..........................{address}")
+            print(f"port.............................{port}")
+            print(f"database.........................{database}")
+            print(f"username.........................{username}")
+            print(f"secret_name......................{secret_name}")
+            print(f"secret_key.......................{secret_key}")
+            print(f"postgresql_image_repository......{postgresql_image_repository}")
+            print(f"postgresql_image_tag.............{postgresql_image_tag}")
+            print(f"postgresql_image_pull_policy.....{postgresql_image_pull_policy}")
+            print(f"all_image_pull_secrets...........{all_image_pull_secrets}")
+            print(f"archive_name.....................{archive_name}")
+            print("")
 
             # Ensure replicas are restored in case of cancelled execution
             def abort_on_signal(signum, frame):
@@ -197,9 +203,11 @@ def job_postgresql():
                 "NAMESPACE":                        job_namespace,
                 "TEMPLATE_PATH":                    job_template_path,
                 "ARCHIVE_NAME":                     archive_name,
-                "POSTGRESQL_IMAGE":                 f"{image_repository}:{image_tag}",
-                "POSTGRESQL_IMAGE_PULL_POLICY":     image_pull_policy,
-                "POSTGRESQL_IMAGE_PULL_SECRETS":    image_pull_secrets,
+                "MOUNT_PATH":                       "/shared_bkup",
+                "POSTGRESQL_IMAGE_REPOSITORY":      postgresql_image_repository,
+                "POSTGRESQL_IMAGE_TAG":             postgresql_image_tag,
+                "POSTGRESQL_IMAGE_PULL_POLICY":     postgresql_image_pull_policy,
+                "ALL_IMAGE_PULL_SECRETS":           all_image_pull_secrets,
             }
             job_config = job_config_common | job_config_specific
             kube.create_job(job_config=job_config)
