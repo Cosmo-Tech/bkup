@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
-  namespace: "{{ NAMESPACE }}"
+  namespace: "{{ JOB_NAMESPACE }}"
 spec:
   backoffLimit: 2
   ttlSecondsAfterFinished: 3600
@@ -37,10 +37,17 @@ spec:
               value: "{{ STORAGE_USERNAME }}"
             - name: BKUP_STORAGE_PASSWORD
               value: "{{ STORAGE_PASSWORD }}"
+            # - name: BKUP_STORAGE_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: "{{ BKUP_STORAGE_PASSWORD_SECRET_NAME }}"
+            #       key: "{{ BKUP_STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
+            - name: BKUP_JOB_NAMESPACE
+              value: "{{ JOB_NAMESPACE }}"
 
       volumes:
         - name: volume-to-backup

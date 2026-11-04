@@ -20,15 +20,19 @@ kube = Kubernetes(context=cluster_context)
 now_formatted = datetime.datetime.now().strftime('%y-%m-%d %H:%M:%S')       # => yy-mm-dd hh:mm:ss    (to display in logs)
 now_str = now_formatted.replace("-", "").replace(":", "").replace(" ", "")  # => yymmddhhmmss         (to include in technicals names such as files, resources etc...)
 
-bkup_image_repository       = os.getenv('BKUP_IMAGE_REPOSITORY')
-bkup_image_tag              = os.getenv('BKUP_IMAGE_TAG')
-bkup_image_pull_policy      = os.getenv('BKUP_IMAGE_PULL_POLICY', 'Always')
-bkup_image_pull_secrets     = yaml.safe_load(os.getenv('BKUP_IMAGE_PULL_SECRETS')).get("pullSecrets")
-storage_protocol            = os.getenv('BKUP_STORAGE_PROTOCOL')
-storage_endpoint            = os.getenv('BKUP_STORAGE_ENDPOINT')
-storage_root                = os.getenv('BKUP_STORAGE_ROOT')
-storage_username            = os.getenv('BKUP_STORAGE_USERNAME')
-storage_password            = os.getenv('BKUP_STORAGE_PASSWORD')
+bkup_image_repository           = os.getenv('BKUP_IMAGE_REPOSITORY')
+bkup_image_tag                  = os.getenv('BKUP_IMAGE_TAG')
+bkup_image_pull_policy          = os.getenv('BKUP_IMAGE_PULL_POLICY', 'Always')
+bkup_image_pull_secrets         = yaml.safe_load(os.getenv('BKUP_IMAGE_PULL_SECRETS')).get("pullSecrets")
+storage_protocol                = os.getenv('BKUP_STORAGE_PROTOCOL')
+storage_endpoint                = os.getenv('BKUP_STORAGE_ENDPOINT')
+storage_root                    = os.getenv('BKUP_STORAGE_ROOT')
+storage_username                = os.getenv('BKUP_STORAGE_USERNAME')
+storage_password                = os.getenv('BKUP_STORAGE_PASSWORD')
+# storage_password_secret_ns      = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAMESPACE')
+# storage_password_secret_name    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
+# storage_password_secret_key     = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
+# storage_password = kube.get_secret_key_value(namespace=storage_password_secret_ns, secret_name=storage_password_secret_name, secret_key=storage_password_secret_key)
 
 job_config_common = {
     "BKUP_IMAGE_REPOSITORY":    bkup_image_repository,
@@ -89,21 +93,21 @@ def job_volumes():
 
                         print("\n---------------------------------------------------------------------")
                         print("Kubernetes job:")
-                        print(f"datetime.............{now_str} ({now_formatted})")
-                        print(f"namespace............{n}")
-                        print(f"job_name.............{job_name_formatted} ({job_name})")
+                        print(f"  datetime.............{now_str} ({now_formatted})")
+                        print(f"  namespace............{n}")
+                        print(f"  job_name.............{job_name_formatted} ({job_name})")
 
                         print("\nVolume to backup:")
-                        print(f"pvc..................{pvc}")
-                        print(f"workload_kind........{workload_kind}")
-                        print(f"workload_name........{workload_name}")
-                        print(f"container............{container}")
-                        print(f"volume...............{volume}")
-                        print(f"mount_path...........{mount_path}")
-                        print(f"original_replicas....{original_replicas}")
+                        print(f"  pvc..................{pvc}")
+                        print(f"  workload_kind........{workload_kind}")
+                        print(f"  workload_name........{workload_name}")
+                        print(f"  container............{container}")
+                        print(f"  volume...............{volume}")
+                        print(f"  mount_path...........{mount_path}")
+                        print(f"  original_replicas....{original_replicas}")
 
                         print("\nDestination storage:")
-                        print(f"archive_name.........{archive_name}")
+                        print(f"  archive_name.........{archive_name}")
                         print("---------------------------------------------------------------------\n")
 
                         # Ensure replicas are restored in case of cancelled execution
@@ -112,6 +116,7 @@ def job_volumes():
                             print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
                             kube.delete_job(namespace=n, job_name=job_name_formatted)
+                            kube.wait_job_end(namespace=n, job_name=job_name_formatted)
                             sys.exit(1)
                         signal.signal(signal.SIGTERM, abort_on_signal)
                         signal.signal(signal.SIGINT, abort_on_signal)
@@ -121,7 +126,7 @@ def job_volumes():
 
                         job_config_specific = {
                             "JOB_NAME":         job_name_formatted,
-                            "NAMESPACE":        n,
+                            "JOB_NAMESPACE":    n,
                             "TEMPLATE_PATH":    job_template_path,
                             "ARCHIVE_NAME":     archive_name,
 
@@ -132,7 +137,7 @@ def job_volumes():
                         job_config = job_config_common | job_config_specific
                         kube.create_job(job_config=job_config)
 
-                        kube.wait_job_completion(namespace=n, job_name=job_name_formatted)
+                        kube.wait_job_end(namespace=n, job_name=job_name_formatted)
 
                         # Scale up workload to its original replicas quantity
                         kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
@@ -175,46 +180,48 @@ def job_postgresql():
             # 63 char max for Kubernetes names
             job_name_formatted = f"bkup-psql-{job_name_hash[:39]}-{now_str}"
 
-            archive_name = f"psql_{postgresql_host}_{postgresql_database}_{now_str}"
+            archive_name_hash = hashlib.md5(postgresql_host.encode()).hexdigest()
+            archive_name = f"psql_{archive_name_hash}_{now_str}"
 
             all_image_pull_secrets = bkup_image_pull_secrets + postgresql_image_pull_secrets
 
             print("\n---------------------------------------------------------------------")
             print("Kubernetes job:")
-            print(f"datetime...........................{now_str} ({now_formatted})")
-            print(f"namespace..........................{job_namespace}")
-            print(f"job_name...........................{job_name_formatted} ({job_name})")
+            print(f"  datetime...........................{now_str} ({now_formatted})")
+            print(f"  namespace..........................{job_namespace}")
+            print(f"  job_name...........................{job_name_formatted} ({job_name})")
 
             print("\nPostgreSQL instance:")
-            print(f"postgresql_host....................{postgresql_host}")
-            print(f"postgresql_port....................{postgresql_port}")
-            print(f"postgresql_database................{postgresql_database}")
-            print(f"postgresql_username................{postgresql_username}")
-            print(f"postgresql_password_secret_name....{postgresql_password_secret_name}")
-            print(f"postgresql_password_secret_key.....{postgresql_password_secret_key}")
+            print(f"  postgresql_host....................{postgresql_host}")
+            print(f"  postgresql_port....................{postgresql_port}")
+            print(f"  postgresql_database................{postgresql_database}")
+            print(f"  postgresql_username................{postgresql_username}")
+            print(f"  postgresql_password_secret_name....{postgresql_password_secret_name}")
+            print(f"  postgresql_password_secret_key.....{postgresql_password_secret_key}")
 
             print("\nPostgreSQL image:")
-            print(f"postgresql_image_repository........{postgresql_image_repository}")
-            print(f"postgresql_image_tag...............{postgresql_image_tag}")
-            print(f"postgresql_image_pull_policy.......{postgresql_image_pull_policy}")
-            print(f"all_image_pull_secrets.............{all_image_pull_secrets}")
+            print(f"  postgresql_image_repository........{postgresql_image_repository}")
+            print(f"  postgresql_image_tag...............{postgresql_image_tag}")
+            print(f"  postgresql_image_pull_policy.......{postgresql_image_pull_policy}")
+            print(f"  all_image_pull_secrets.............{all_image_pull_secrets}")
 
             print("\nDestination storage:")
-            print(f"archive_name.......................{archive_name}")
+            print(f"  archive_name.......................{archive_name}")
             print("---------------------------------------------------------------------\n")
 
             # Ensure replicas are restored in case of cancelled execution
             def abort_on_signal(signum, frame):
                 print(f"\n\ntermination signal ({signum}) received")
                 print(f"aborting backup job {job_name_formatted}...")
-                kube.delete_job(namespace=n, job_name=job_name_formatted)
+                kube.delete_job(namespace=job_namespace, job_name=job_name_formatted)
+                kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
                 sys.exit(1)
             signal.signal(signal.SIGTERM, abort_on_signal)
             signal.signal(signal.SIGINT, abort_on_signal)
 
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
-                "NAMESPACE":                        job_namespace,
+                "JOB_NAMESPACE":                    job_namespace,
                 "TEMPLATE_PATH":                    job_template_path,
                 "ARCHIVE_NAME":                     archive_name,
 
@@ -238,7 +245,7 @@ def job_postgresql():
             job_config = job_config_common | job_config_specific
             kube.create_job(job_config=job_config)
 
-            kube.wait_job_completion(namespace=job_namespace, job_name=job_name_formatted)
+            kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")

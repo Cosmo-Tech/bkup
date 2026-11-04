@@ -1,12 +1,12 @@
 # ----- ARCHITECTURE -----
-# database (running psql instance) --> database-dumper (pg_dump) --UNIX pipe-> Python exporter
+# database (running psql instance) <-- database-dumper (containing pg_dump) --UNIX pipe-> Python exporter
 # ------------------------
 
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
-  namespace: "{{ NAMESPACE }}"
+  namespace: "{{ JOB_NAMESPACE }}"
 spec:
   backoffLimit: 2
   ttlSecondsAfterFinished: 3600
@@ -23,17 +23,16 @@ spec:
           args:
             - |
               # This script waits for a UNIX pipe from the sidecar container (this is to use the right PostgreSQL binaries)
-              pipe="$BKUP_MOUNT_PATH/pg_pipe"
+              pipe="$BKUP_MOUNT_PATH/pipe"
 
-              echo "waiting for sidecar UNIX pipe at $pipe..."
               timer=1
               until [ -p "$pipe" ]; do
                 sleep $timer
                 timer=$(($timer+1))
-                echo "waited $timer sec"
+                echo "waiting for sidecar UNIX pipe at $pipe... $timer"
               done
 
-              echo "Getting backup from database-dumper..."
+              echo "getting backup from database-dumper..."
 
               # Use the pipe as path arg for the exporter 
               python3 -m src.exporter
@@ -58,10 +57,17 @@ spec:
               value: "{{ STORAGE_USERNAME }}"
             - name: BKUP_STORAGE_PASSWORD
               value: "{{ STORAGE_PASSWORD }}"
+            # - name: BKUP_STORAGE_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: "{{ BKUP_STORAGE_PASSWORD_SECRET_NAME }}"
+            #       key: "{{ BKUP_STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
+            - name: BKUP_JOB_NAMESPACE
+              value: "{{ JOB_NAMESPACE }}"
 
 
         # --- SIDECAR CONTAINER: Dump the database (with real PostgreSQL binaries) ---
@@ -71,13 +77,34 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              # set -x
               # This script create a UNIX pipe to send data to the exporter
 
+              # ------------------------------------------------------
+              # Signal is a file used to communicate with the exporter
+              # ------------------------------------------------------
+              signal="$BKUP_MOUNT_PATH/signal"
+              rm -f "$signal"
 
-              # -------------------------------------------
-              #  UNIX PIPE TO SEND DATA TO THE WORKER
-              # -------------------------------------------
-              pipe="$BKUP_MOUNT_PATH/pg_pipe"
+              # Usage: get_signal
+              get_signal() {
+                if [ -f "$signal" ]; then
+                  cat "$signal"
+                fi
+              }
+
+              # Usage: set_signal <signal_str>
+              set_signal() {
+                echo $1 > "$signal"
+              }
+
+              set_signal 'starting'
+
+
+              # ------------------------------------------------------
+              # Pipe is used to stream data to the exporter
+              # ------------------------------------------------------
+              pipe="$BKUP_MOUNT_PATH/pipe"
               rm -f "$pipe"
 
               mkfifo "$pipe"
@@ -89,9 +116,9 @@ spec:
               fi
 
 
-              # -------------------------------------------
-              #  DATA DUMP
-              # -------------------------------------------
+              # ------------------------------------------------------
+              # Retrieve databases informations & test access
+              # ------------------------------------------------------
               if [ -z "$PGHOST" ]; then
                 echo "error: PGHOST environment variable is missing."
                 exit 1
@@ -102,8 +129,8 @@ spec:
                 exit 1
               fi
 
-              if [ -z "$PGUSERNAME" ]; then
-                echo "error: PGUSERNAME environment variable is missing."
+              if [ -z "$PGUSER" ]; then
+                echo "error: PGUSER environment variable is missing."
                 exit 1
               fi
 
@@ -112,38 +139,63 @@ spec:
                 exit 1
               fi
 
-
               # If PGPASSWORD points to a mounted secret file, read file content
               if [ -f "$PGPASSWORD" ]; then
-                PGPASSWORD=$PGPASSWORD
+                export PGPASSWORD=$(cat "$PGPASSWORD")
               fi
 
-              echo "Waiting for remote PostgreSQL at $PGHOST:$PGPORT as user $PGUSER..."
+              timer=1
               until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
-                echo "Waiting for database connection..."
-                sleep 2
+                sleep $timer
+                timer=$(($timer+1))
+                echo "waiting for PostgreSQL connection at $PGHOST:$PGPORT as user $PGUSER... $timer"
               done
 
-              # List databases        
-              db_list=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false" 2>/dev/null)
+              # List databases
+              if [ -z "$PGDATABASE" ] || [ "$PGDATABASE" = 'None' ]; then
+                # Ensure not falling in 'FATAL: database "None" does not exist'
+                unset PGDATABASE
+
+                # Default is all databases
+                db_list=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false" 2>/dev/null)
+              else
+                # User-defined database
+                db_list=$PGDATABASE
+              fi
+
               if [ -z "$db_list" ]; then
-                echo "error: no database found or access denied for user '$PGUSER'"
+                echo "error: no database found"
                 exit 1
               fi
 
-              echo "starting database(s) dump to UNIX pipe..."
+
+              # ------------------------------------------------------
+              # Dump each databases & stream them through the pipe to the exporter
+              # ------------------------------------------------------
+              echo "starting database(s) dump to $pipe..."
               for db in $db_list; do
+                echo "dumping database '$db'..."
+
+                set_signal "dumping:$db"
 
                 # Dump data to pipe
                 pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" > "$pipe"
                 dump_exit=$?
-
                 if [ $dump_exit -ne 0 ]; then
                   echo "error: pg_dump failed with exit code $dump_exit for database '$db'"
                   exit 1
                 fi
+
+                until [ "$(get_signal)" = "done:$db" ]; do
+                  sleep 1
+                done
               done
 
+              set_signal 'finished'
+
+              sleep 3000000
+
+              exit 0
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
@@ -156,10 +208,10 @@ spec:
               value: "{{ POSTGRESQL_PORT }}"
             - name: PGDATABASE
               value: "{{ POSTGRESQL_DATABASE }}"
-            - name: PGUSERNAME
+            - name: PGUSER
               value: "{{ POSTGRESQL_USERNAME }}"
-            - name: PGPASSWORD
-              value: "{{ POSTGRESQL_PASSWORD }}"
+            # - name: PGPASSWORD
+            #   value: "{{ POSTGRESQL_PASSWORD }}"
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:

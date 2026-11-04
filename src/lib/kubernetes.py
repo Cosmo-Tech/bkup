@@ -132,7 +132,7 @@ class Kubernetes:
     def create_job(self, job_config: dict):
         """Create a Kubernetes job from a template and configuration dictionary."""
         template_path   = job_config["TEMPLATE_PATH"]
-        namespace       = job_config["NAMESPACE"]
+        namespace       = job_config["JOB_NAMESPACE"]
         job_name        = job_config["JOB_NAME"]
 
         raw_yaml = Path(template_path).read_text(encoding="utf-8")
@@ -156,9 +156,9 @@ class Kubernetes:
             print(f"error: {utils.current_function()}: failed to delete job {namespace}/{job_name}: {e}")
 
 
-    def wait_job_completion(self, namespace: str, job_name: str) -> bool:
-        """Wait for a job to complete"""
-        print(f"waiting completion of job {job_name}...")
+    def wait_job_end(self, namespace: str, job_name: str) -> bool:
+        """Wait for a job to end"""
+        print(f"waiting end of job {job_name}...")
 
         try:
             start_time = time.time()
@@ -175,7 +175,7 @@ class Kubernetes:
 
                 time.sleep(3)
         except Exception as e:
-            print(f"error: {utils.current_function()}: failed to wait for completion of job {job_name}: {e}")
+            print(f"error: {utils.current_function()}: failed to wait for end of job {job_name}: {e}")
             return False
 
 
@@ -207,3 +207,9 @@ class Kubernetes:
             print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
+
+
+    # def get_secret_key_value(self, namespace: str, secret_name: str, secret_key: str):
+    #     secret_value = self.core_v1.read_namespaced_secret(namespace=namespace, name=secret_name)
+    #     print(secret_value)
+    #     return secret_value

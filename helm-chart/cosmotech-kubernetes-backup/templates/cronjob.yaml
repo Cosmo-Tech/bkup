@@ -42,11 +42,15 @@ spec:
                   value: {{ .Values.backup.destination.root }}
                 - name: BKUP_STORAGE_USERNAME
                   value: {{ .Values.backup.destination.username }}
-                - name: BKUP_STORAGE_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ .Values.backup.destination.passwordSecret.name }}
-                      key: {{ .Values.backup.destination.passwordSecret.key }}
+                # - name: BKUP_STORAGE_PASSWORD
+                #   valueFrom:
+                #     secretKeyRef:
+                #       name: {{ .Values.backup.destination.passwordSecret.name }}
+                #       key: {{ .Values.backup.destination.passwordSecret.key }}
+                - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
+                  value: {{ .Values.backup.destination.passwordSecret.name }}
+                - name: BKUP_STORAGE_PASSWORD_SECRET_KEY
+                  value: {{ .Values.backup.destination.passwordSecret.key }}
                 - name: BKUP_STORAGE_CONTAINER
                   value: {{ .Values.backup.destination.container }}
 
