@@ -4,9 +4,8 @@ import time
 import tarfile
 import gzip
 import fsspec
-from urllib.parse import quote
 
-def remote_stream():
+def remote_stream_exporter():
     try:
         protocol            = os.getenv('BKUP_STORAGE_PROTOCOL')
         endpoint            = os.getenv('BKUP_STORAGE_ENDPOINT')
@@ -44,13 +43,13 @@ def remote_stream():
             "password": password,
         }
 
-        print(f"backup informations:")
+        print('backup export informations:')
         print(f"  protocol...............{protocol}")
         print(f"  root...................{root}")
         print(f"  archive_name_prefix....{archive_name_prefix}")
         print(f"  mount_path.............{mount_path}")
         print(f"  address_prefix.........{address_prefix}")
-        print(f"  options................{str(storage_options).replace(password, "*********") }")
+        print(f"  options................{str(storage_options).replace(password, '*********') }")
 
         # Overwrite default fsspec endpoint (= s3.amazonaws.com) if it has been defined by user
         if endpoint:
@@ -67,7 +66,7 @@ def remote_stream():
                     signal = f.read().strip()
 
                 if signal == "finished":
-                    print("all dumps have been successfully exported.")
+                    print('all dumps have been successfully exported.')
                     break
 
                 if signal.startswith("dumping:"):
@@ -105,69 +104,15 @@ def remote_stream():
                         full_path = os.path.join(mount_path, item)
                         tar.add(full_path, arcname=item)
 
-
-        # # Open fsspec stream enable to read binaries (which is required for tar)
-        # with fsspec.open(address, "wb", **storage_options) as remote_stream:
-
-        #     # If pipe_file exist => .gz (database dump backup)
-        #     if os.path.exists(pipe_file):
-        #         print(f"detected UNIX pipe at {pipe_file}. Waiting for dumps...")
-
-        #         with gzip.GzipFile(fileobj=remote_stream, mode="wb") as gz:
-        #             while True:
-        #                 # The "signal" allows to communicate with the sidecar pod of the job
-        #                 with open(signal_file, "r") as f:
-        #                     signal = f.read().strip()
-
-        #                 if signal == "finished":
-        #                     print("all dumps have been successfully exported.")
-        #                     break
-
-        #                 if signal.startswith("dumping:"):
-        #                     dump_target = signal.split(":", 1)[1]
-        #                     dump_file = f"{dump_target}.sql"
-        #                     print(f"dumping '{dump_target}' to {dump_file}")
-
-        #                     # Read data blocs of 1Mo
-        #                     with open(pipe_file, "rb") as pipe:
-        #                         while chunk := pipe.read(1024 * 1024):
-        #                             gz.write(chunk)
-
-        #                     # Sending "done" signal
-        #                     with open(signal_file, "w") as f:
-        #                         f.write(f"done:{dump_target}")
-
-        #                 time.sleep(1)
-
-        #         # with gzip.GzipFile(fileobj=remote_stream, mode="wb") as gz:
-        #         #     # 'read as binaries'
-        #         #     with open(pipe_file, "rb") as pipe:
-        #         #         while chunk := pipe.read(1024 * 1024):
-        #         #             gz.write(chunk)
-
-        #         # with open(signal_file, "r") as f:
-        #         #     signal = f.read().strip()
-        #         #     while signal != "finished":
-        #         #         print(f"waiting for sidecar signal 'finished' (currently '{signal}')...")
-        #         #         time.sleep(1)
-
-        #     # If pipe_file doesn't exist => .tar.gz (= volume backup)
-        #     else:
-        #         with tarfile.open(fileobj=remote_stream, mode="w|gz") as tar:
-        #             for item in os.listdir(mount_path):
-        #                 # Ensure mount_path structure is kept in the archive
-        #                 full_path = os.path.join(mount_path, item)
-        #                 tar.add(full_path, arcname=item)
-
         print("\nbackup completed successfully")
 
     except Exception as e:
-        print(f"error: backup execution failed: {e}")
+        print(f"error: backup export execution failed: {e}")
         sys.exit(1)
 
 
 def main():
-    remote_stream()
+    remote_stream_exporter()
 
 
 if __name__ == "__main__":

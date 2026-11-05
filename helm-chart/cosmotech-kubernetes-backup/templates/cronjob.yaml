@@ -61,7 +61,7 @@ spec:
                 # PostgreSQL backup job
                 - name: BKUP_POSTGRESQL_VALUES
                   value: |
-                    {{- toYaml .Values.backups.postgresql | nindent 20 }}
+                    {{- toYaml .Values.backup.postgresql | nindent 20 }}
 
           {{- with .Values.workload.image.pullSecrets }}
           imagePullSecrets:

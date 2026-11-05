@@ -3,9 +3,9 @@ import time
 import yaml
 import jinja2
 from pathlib import Path
-
 from kubernetes import client, config
-from src.utils import general as utils
+
+from src.lib.utils import general as utils
 
 
 class Kubernetes:
@@ -207,9 +207,3 @@ class Kubernetes:
             print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
-
-
-    # def get_secret_key_value(self, namespace: str, secret_name: str, secret_key: str):
-    #     secret_value = self.core_v1.read_namespaced_secret(namespace=namespace, name=secret_name)
-    #     print(secret_value)
-    #     return secret_value

@@ -1,7 +1,5 @@
 import os
 import sys
-import argparse
-import signal
 import yaml
 import hashlib
 import datetime
@@ -29,10 +27,6 @@ storage_endpoint                = os.getenv('BKUP_STORAGE_ENDPOINT')
 storage_root                    = os.getenv('BKUP_STORAGE_ROOT')
 storage_username                = os.getenv('BKUP_STORAGE_USERNAME')
 storage_password                = os.getenv('BKUP_STORAGE_PASSWORD')
-# storage_password_secret_ns      = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAMESPACE')
-# storage_password_secret_name    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
-# storage_password_secret_key     = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
-# storage_password = kube.get_secret_key_value(namespace=storage_password_secret_ns, secret_name=storage_password_secret_name, secret_key=storage_password_secret_key)
 
 job_config_common = {
     "BKUP_IMAGE_REPOSITORY":    bkup_image_repository,
@@ -46,7 +40,7 @@ job_config_common = {
     "STORAGE_PASSWORD":         storage_password,
 }
 
-def job_volumes():
+def job_export_volumes():
     """Run Kubernetes volumes backup job"""
     try:
         print("starting Kubernetes volumes backup jobs...")
@@ -147,7 +141,7 @@ def job_volumes():
         sys.exit(1)
 
 
-def job_postgresql():
+def job_export_postgresql():
     """Run PostgreSQL backup job"""
     try:
         print("starting PostgreSQL backup jobs...")
@@ -206,7 +200,7 @@ def job_postgresql():
             print(f"  all_image_pull_secrets.............{all_image_pull_secrets}")
 
             print("\nDestination storage:")
-            print(f"  archive_name.......................{archive_name}")
+            print(f"  archive_name.......................{archive_name} (psql_{postgresql_host}_{now_str})")
             print("---------------------------------------------------------------------\n")
 
             # Ensure replicas are restored in case of cancelled execution
@@ -253,8 +247,8 @@ def job_postgresql():
 
 
 def main():
-    # job_volumes()
-    job_postgresql()
+    job_export_volumes()
+    job_export_postgresql()
 
 
 if __name__ == "__main__":

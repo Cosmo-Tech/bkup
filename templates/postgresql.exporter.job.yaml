@@ -8,7 +8,7 @@ metadata:
   name: "{{ JOB_NAME }}"
   namespace: "{{ JOB_NAMESPACE }}"
 spec:
-  backoffLimit: 2
+  backoffLimit: 0
   ttlSecondsAfterFinished: 3600
   template:
     spec:
@@ -22,7 +22,7 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # This script waits for a UNIX pipe from the sidecar container (this is to use the right PostgreSQL binaries)
+              # This script waits for a UNIX pipe from the sidecar container
               pipe="$BKUP_MOUNT_PATH/pipe"
 
               timer=1
@@ -32,9 +32,8 @@ spec:
                 echo "waiting for sidecar UNIX pipe at $pipe... $timer"
               done
 
-              echo "getting backup from database-dumper..."
+              echo "waiting for database-dumper..."
 
-              # Use the pipe as path arg for the exporter 
               python3 -m src.exporter
           resources:
             requests:
@@ -57,11 +56,6 @@ spec:
               value: "{{ STORAGE_USERNAME }}"
             - name: BKUP_STORAGE_PASSWORD
               value: "{{ STORAGE_PASSWORD }}"
-            # - name: BKUP_STORAGE_PASSWORD
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: "{{ BKUP_STORAGE_PASSWORD_SECRET_NAME }}"
-            #       key: "{{ BKUP_STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
@@ -77,9 +71,6 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              # set -x
-              # This script create a UNIX pipe to send data to the exporter
-
               # ------------------------------------------------------
               # Signal is a file used to communicate with the exporter
               # ------------------------------------------------------
@@ -180,20 +171,20 @@ spec:
 
                 # Dump data to pipe
                 pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" > "$pipe"
-                dump_exit=$?
-                if [ $dump_exit -ne 0 ]; then
-                  echo "error: pg_dump failed with exit code $dump_exit for database '$db'"
+                psql_exit=$?
+                if [ $psql_exit -ne 0 ]; then
+                  echo "error: pg_dump failed with exit code $psql_exit for database '$db'"
                   exit 1
                 fi
 
                 until [ "$(get_signal)" = "done:$db" ]; do
                   sleep 1
                 done
+
+                echo "success: database '$db' exported"
               done
 
               set_signal 'finished'
-
-              sleep 3000000
 
               exit 0
           volumeMounts:
@@ -210,8 +201,6 @@ spec:
               value: "{{ POSTGRESQL_DATABASE }}"
             - name: PGUSER
               value: "{{ POSTGRESQL_USERNAME }}"
-            # - name: PGPASSWORD
-            #   value: "{{ POSTGRESQL_PASSWORD }}"
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
