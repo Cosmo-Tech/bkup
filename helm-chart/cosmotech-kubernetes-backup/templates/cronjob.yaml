@@ -32,6 +32,11 @@ spec:
                   value: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
                 - name: BKUP_IMAGE_PULL_POLICY
                   value: {{ .Values.workload.image.pullPolicy }}
+                - name: BKUP_IMAGE_PULL_SECRETS
+                  value: |
+                    {{- toYaml .Values.workload.image.pullSecrets | nindent 20 }}
+                # - name: BKUP_IMAGE_PULL_SECRETS
+                #   value: {{ .Values.workload.image }}
 
                 # Destination storage
                 - name: BKUP_STORAGE_PROTOCOL
@@ -42,11 +47,6 @@ spec:
                   value: {{ .Values.backup.destination.root }}
                 - name: BKUP_STORAGE_USERNAME
                   value: {{ .Values.backup.destination.username }}
-                # - name: BKUP_STORAGE_PASSWORD
-                #   valueFrom:
-                #     secretKeyRef:
-                #       name: {{ .Values.backup.destination.passwordSecret.name }}
-                #       key: {{ .Values.backup.destination.passwordSecret.key }}
                 - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
                   value: {{ .Values.backup.destination.passwordSecret.name }}
                 - name: BKUP_STORAGE_PASSWORD_SECRET_KEY

@@ -9,21 +9,22 @@ version = "0.0.0"
 description = "Cloud-Agnostic Kubernetes Backup Tool"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "kubernetes",
     "psutil",
     "PyYAML",
     "jinja2",
-    "fsspec",
-    "adlfs",
-    "s3fs",
-    "gcsfs",
+    "fsspec>=2024.2.0,<2025.0.0",
+    "adlfs>=2024.2.0,<2025.0.0",
+    "s3fs>=2024.2.0,<2025.0.0",
+    "gcsfs>=2024.2.0,<2025.0.0",
+    "aiobotocore>=2.11.0,<3.0.0"
 ]
 
 
 [project.scripts]
-bkup = "src.orchestrator:main"
+bkup = "src.cli:main"
 
 
 [tool.setuptools.packages.find]

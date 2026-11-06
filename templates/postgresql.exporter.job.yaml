@@ -7,8 +7,11 @@ kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
   namespace: "{{ JOB_NAMESPACE }}"
+  # labels:
+  #   bkup: job
 spec:
   backoffLimit: 0
+  activeDeadlineSeconds: 86400
   ttlSecondsAfterFinished: 3600
   template:
     spec:

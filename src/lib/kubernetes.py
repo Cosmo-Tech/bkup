@@ -5,12 +5,12 @@ import jinja2
 from pathlib import Path
 from kubernetes import client, config
 
-from src.lib.utils import general as utils
+import src.lib.utils as utils
 
 
 class Kubernetes:
     def __init__(self, context: str = None):
-        """Init Kubernetes connexion."""
+        """Init Kubernetes connexion"""
         is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
         # Ensure not running on default context in case of CLI usage
@@ -34,6 +34,7 @@ class Kubernetes:
 
 
     def list_namespaces(self) -> list:
+        """List namespaces"""
         results = []
         try:
             namespaces = self.core_v1.list_namespace()
@@ -46,6 +47,7 @@ class Kubernetes:
 
 
     def list_deployments(self, namespace: str) -> list:
+        """List deployments of a namespace"""
         try:
             deployments = self.apps_v1.list_namespaced_deployment(namespace=namespace)
             results = []
@@ -60,6 +62,7 @@ class Kubernetes:
 
 
     def list_statefulsets(self, namespace: str) -> list:
+        """List statefulsets of a namespace"""
         try:
             statefulsets = self.apps_v1.list_namespaced_stateful_set(namespace=namespace)
             results = []
@@ -84,7 +87,6 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {utils.current_function()}: {e}")
         return results
-
 
 
     def map_mountpoints_pvc_workload(self, pvc_name: str, workload: str) -> list:
@@ -156,6 +158,43 @@ class Kubernetes:
             print(f"error: {utils.current_function()}: failed to delete job {namespace}/{job_name}: {e}")
 
 
+    def get_job_status(self, namespace: str, job_name: str) -> str:
+        """Get status of a job"""
+        try:
+            job = self.batch_v1.read_namespaced_job(namespace=namespace, name=job_name)
+
+            if job.status.succeeded:
+                status = 'succeeded'
+            elif job.status.failed:
+                status = 'failed'
+            elif job.status.active:
+                status = "active"
+            else:
+                status = 'pending'
+
+            return status
+        except Exception as e:
+            print(f"error: {utils.current_function()}: {e}")
+            return None
+
+
+    # def get_backup_jobs(self) -> dict:
+    #     """Get all backup jobs"""
+    #     try:
+    #         jobs = self.batch_v1.list_job_for_all_namespaces()
+
+    #         backup_jobs = []
+    #         for j in jobs.items:
+    #             for l in j.metadata.labels:
+    #                 if l == 'bkup':
+    #                     backup_jobs.append(j)
+
+    #         return backup_jobs
+    #     except Exception as e:
+    #         print(f"error: {utils.current_function()}: {e}")
+    #         return []
+
+
     def wait_job_end(self, namespace: str, job_name: str) -> bool:
         """Wait for a job to end"""
         print(f"waiting end of job {job_name}...")
@@ -163,15 +202,25 @@ class Kubernetes:
         try:
             start_time = time.time()
             while time.time() - start_time < 600:
-                job = self.batch_v1.read_namespaced_job(name=job_name, namespace=namespace)
+                try:
+                    job = self.batch_v1.read_namespaced_job(namespace=namespace, name=job_name)
+                    status = self.get_job_status(namespace=namespace, job_name=job_name)
 
-                if job.status.succeeded and job.status.succeeded > 0:
-                    print(f"success: completed job {namespace}/{job_name}")
-                    return True
+                    if status == 'succeeded':
+                        print(f"success: completed job {namespace}/{job_name}")
+                        return True
 
-                if job.status.failed and job.status.failed > 0:
-                    print(f"error: failed job {namespace}/{job_name}")
-                    return False
+                    if status == 'failed':
+                        print(f"error: failed job {namespace}/{job_name}")
+                        return False
+
+                except client.exceptions.ApiException as api_error:
+                    if api_error.status == 404:
+                        print(f"warning: job {namespace}/{job_name} not found (might have been deleted during abort).")
+                        return False
+                    else:
+                        # Re-raise unexpected API errors
+                        raise
 
                 time.sleep(3)
         except Exception as e:
@@ -207,3 +256,37 @@ class Kubernetes:
             print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
+
+
+    def add_workload_annotation(self, namespace: str, workload_kind: str, workload_name: str, annotations: dict):
+        """Add or update annotations on a workload (= deployment, statefulset)"""
+        body = {"metadata": {"annotations": annotations}}
+        try:
+            if workload_kind.lower() == "deployment":
+                self.apps_v1.patch_namespaced_deployment(name=workload_name, namespace=namespace, body=body)
+
+            elif workload_kind.lower() == "statefulset":
+                self.apps_v1.patch_namespaced_stateful_set(name=workload_name, namespace=namespace, body=body)
+
+            print(f"successfully added annotations {annotations} to {workload_kind}/{workload_name}")
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to add annotations to {workload_kind}/{workload_name}: {e}")
+
+
+    def get_workload_annotation(self, namespace: str, workload_kind: str, workload_name: str, annotation_key: str) -> str:
+        """Get value of a given annotation from a workload (= deployment, statefulset)"""
+        try:
+            if workload_kind.lower() == "deployment":
+                w = self.apps_v1.read_namespaced_deployment(name=workload_name, namespace=namespace)
+
+            elif workload_kind.lower() == "statefulset":
+                w = self.apps_v1.read_namespaced_stateful_set(name=workload_name, namespace=namespace)
+
+            annotations = w.metadata.annotations
+            if annotations:
+                return annotations.get(annotation_key)
+            
+            return None
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to read annotation '{annotation_key}' of {workload_kind}/{workload_name}: {e}")
+            return None
