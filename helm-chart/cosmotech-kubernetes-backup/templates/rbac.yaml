@@ -33,7 +33,9 @@ rules:
   - apiGroups: [""]
     resources:
       - "secrets"
-    verbs: ["get", "list", "watch"]
+    # verbs: ["get", "list", "watch"]
+    # create & deleted used for JIT secret (automatically get bkup secret in target namespace)
+    verbs: ["get", "list", "watch", "create", "delete"]
 
   - apiGroups: ["apps"]
     resources:
@@ -47,10 +49,10 @@ rules:
       - "jobs/status"
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  - apiGroups: ["storage.k8s.io"]
-    resources:
-      - "volumeattachments"
-    verbs: ["get", "list", "watch"]
+  # - apiGroups: ["storage.k8s.io"]
+  #   resources:
+  #     - "volumeattachments"
+  #   verbs: ["get", "list", "watch"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
