@@ -2,28 +2,22 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
-  namespace: "{{ NAMESPACE }}"
+  namespace: "{{ JOB_NAMESPACE }}"
+  # labels:
+  #   bkup: job
 spec:
   backoffLimit: 2
+  activeDeadlineSeconds: 86400
   ttlSecondsAfterFinished: 3600
   template:
     spec:
       restartPolicy: Never
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - "{{ NODE_NAME }}"
+      imagePullSecrets: {{ BKUP_IMAGE_PULL_SECRETS | tojson }}
       containers:
-        - name: worker
-          image: ghcr.io/cosmo-tech/bkup:latest
-          imagePullPolicy: Always
+        - name: exporter
+          image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
+          imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
           command: ["python", "-m", "src.exporter"]
-          args: ["--pvc", "{{ PVC_NAME }}", "--path", "{{ MOUNTED_PATH }}", "--type", "volume"]
           resources:
             requests:
               cpu: "250m"
@@ -33,21 +27,31 @@ spec:
               memory: "512Mi"
           volumeMounts:
             - name: volume-to-backup
-              mountPath: "{{ MOUNTED_PATH }}"
+              mountPath: "{{ MOUNT_PATH }}"
               readOnly: true
           env:
-            - name: STORAGE_ADDRESS
-              value: "templated"
-            - name: STORAGE_USERNAME
-              value: "templated"
-            - name: STORAGE_PASSWORD
-              value: "templated"
-            - name: CLUSTER_NAME
-              value: "templated"
-            - name: NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
+            - name: BKUP_STORAGE_PROTOCOL
+              value: "{{ STORAGE_PROTOCOL }}"
+            - name: BKUP_STORAGE_ENDPOINT
+              value: "{{ STORAGE_ENDPOINT }}"
+            - name: BKUP_STORAGE_ROOT
+              value: "{{ STORAGE_ROOT }}"
+            - name: BKUP_STORAGE_USERNAME
+              value: "{{ STORAGE_USERNAME }}"
+            - name: BKUP_STORAGE_PASSWORD
+              value: "{{ STORAGE_PASSWORD }}"
+            # - name: BKUP_STORAGE_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: "{{ BKUP_STORAGE_PASSWORD_SECRET_NAME }}"
+            #       key: "{{ BKUP_STORAGE_PASSWORD_SECRET_KEY }}"
+            - name: BKUP_ARCHIVE_NAME
+              value: "{{ ARCHIVE_NAME }}"
+            - name: BKUP_MOUNT_PATH
+              value: "{{ MOUNT_PATH }}"
+            - name: BKUP_JOB_NAMESPACE
+              value: "{{ JOB_NAMESPACE }}"
+
       volumes:
         - name: volume-to-backup
           persistentVolumeClaim:

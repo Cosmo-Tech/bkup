@@ -3,6 +3,9 @@ run-name: "[docker ci] branch=${{ github.ref_name }} - ${{ github.event.head_com
 
 on:
   push:
+    branches:
+      - main
+      - ci*
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
