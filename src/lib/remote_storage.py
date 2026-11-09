@@ -28,9 +28,12 @@ class RemoteStorage:
         else:
             self.address_prefix = f"{self.protocol}://{self.root}"
 
-        # Securely get password from secret
-        kube = Kubernetes()
-        self.password = kube.get_secret_value(namespace=self.job_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
+        if os.getenv('BKUP_STORAGE_PASSWORD'):
+            self.password = os.getenv('BKUP_STORAGE_PASSWORD').strip()
+        else:
+            # Securely get password from secret
+            kube = Kubernetes()
+            self.password = kube.get_secret_value(namespace=self.job_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
 
         # Map our generic username/password to each drivers specific keys
         self.storage_options = {
@@ -150,7 +153,7 @@ class RemoteStorage:
             print("\nbackup completed successfully")
 
         except Exception as e:
-            print(f"error: backup export execution failed: {e}")
+            print(f"error: {utils.current_function()}: backup export execution failed: {e}")
             sys.exit(1)
 
 
@@ -208,7 +211,7 @@ class RemoteStorage:
             print("\nrestore completed successfully")
 
         except Exception as e:
-            print(f"error: backup import execution failed: {e}")
+            print(f"error: {utils.current_function()}: backup import execution failed: {e}")
             sys.exit(1)
 
 

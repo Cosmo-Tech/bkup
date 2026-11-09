@@ -439,6 +439,11 @@ def job_import_postgresql(archive_name: str):
             if postgresql_database and postgresql_database != target_db:
                 continue
 
+            if "/" in archive_name:
+                archive_root_path = archive_name.split("/")[0]
+                archive_name = archive_name.split("/")[1]
+                print(f"\ndetected root path '{archive_root_path}', understood to use '{archive_name}'")
+
             postgresql_port                 = p.get("port")
             postgresql_username             = p.get("username")
             postgresql_password_secret_name = p.get("passwordSecret").get("name")

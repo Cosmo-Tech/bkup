@@ -83,7 +83,7 @@ backup:
       key: ""
 
   # Configure the job backup type for PostgreSQL
-  # e.g:  
+  # e.g:
   # - address: postgresql.namespace.svc.cluster.local
   #   port: 5432
   #   database: postgres

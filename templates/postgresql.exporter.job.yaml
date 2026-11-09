@@ -64,6 +64,10 @@ spec:
                 secretKeyRef:
                   name: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
                   key: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
+            # - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
+            #   value: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
+            # - name: BKUP_STORAGE_PASSWORD_SECRET_KEY
+            #   value: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH

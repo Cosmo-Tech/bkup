@@ -41,6 +41,11 @@ spec:
                 # - name: BKUP_IMAGE_PULL_SECRETS
                 #   value: {{ .Values.workload.image }}
 
+                - name: BKUP_ORCHESTRATOR_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+
                 # Destination storage
                 - name: BKUP_STORAGE_PROTOCOL
                   value: {{ .Values.backup.destination.protocol }}
