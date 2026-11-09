@@ -14,9 +14,9 @@ class Kubernetes:
         """Init Kubernetes connexion"""
         is_in_cluster = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
-        # Ensure not running on default context in case of CLI usage
-        if not context and not is_in_cluster:
-            raise ValueError("missing cluster context")
+        # # Ensure not running on default context in case of CLI usage
+        # if not context and not is_in_cluster:
+        #     raise ValueError("missing cluster context")
 
         self.context = context
 
@@ -32,7 +32,7 @@ class Kubernetes:
         self.core_v1 = client.CoreV1Api()
         self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
-        self.auth_v1 = client.AuthV1Api()
+        self.auth_v1 = client.AuthorizationV1Api()
         # self.storage_v1 = client.StorageV1Api()
 
 
@@ -181,23 +181,6 @@ class Kubernetes:
             return None
 
 
-    # def get_backup_jobs(self) -> dict:
-    #     """Get all backup jobs"""
-    #     try:
-    #         jobs = self.batch_v1.list_job_for_all_namespaces()
-
-    #         backup_jobs = []
-    #         for j in jobs.items:
-    #             for l in j.metadata.labels:
-    #                 if l == 'bkup':
-    #                     backup_jobs.append(j)
-
-    #         return backup_jobs
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: {e}")
-    #         return []
-
-
     def wait_job_end(self, namespace: str, job_name: str) -> bool:
         """Wait for a job to end"""
         print(f"waiting end of job {job_name}...")
@@ -295,30 +278,54 @@ class Kubernetes:
             return None
 
 
-    def create_secret(self, namespace: str, secret_name: str, data: dict):
-        """Create a Kubernetes secret if not exists"""
+    def get_secret_value(self, namespace: str, secret_name: str, key: str) -> str:
+        """Get value of a given secret key"""
         try:
-            encoded_data = {k: base64.b64encode(v.encode()).decode('utf-8') for k, v in data.items()}
+            secret = self.core_v1.read_namespaced_secret(namespace=namespace, name=secret_name)
             
-            secret = client.V1Secret(
-                api_version="v1",
-                kind="Secret",
-                metadata=client.V1ObjectMeta(name=secret_name),
-                data=encoded_data,
-                type="Opaque"
-            )
+            if not secret.data or key not in secret.data:
+                print(f"error: key '{key}' not found in secret {namespace}/{secret_name}")
+                return None
+                
+            encoded_val = secret.data[key]
+            return base64.b64decode(encoded_val).decode('utf-8')
+            
+        except client.exceptions.ApiException as api_err:
+            if api_err.status == 404:
+                print(f"error: secret {namespace}/{secret_name} not found")
+            else:
+                print(f"error: {utils.current_function()}: Kubernetes API error reading secret {namespace}/{secret_name}: {api_err}")
+            return None
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to read secret {namespace}/{secret_name}: {e}")
+            return None
 
-            self.core_v1.create_namespaced_secret(namespace=namespace, body=secret)
-            print(f"created secret {namespace}/{secret_name}")
-            
+
+    def duplicate_secret(self, source_namespace:str, source_name: str, new_namespace:str, new_name:str):
+        """Duplicate a secret to another namespace"""
+        try:
+            source_secret = self.core_v1.read_namespaced_secret(namespace=source_namespace, name=source_name)
+
+            source_secret.metadata.name = new_name
+            source_secret.metadata.namespace = new_namespace
+            source_secret.metadata.uid = None
+            source_secret.metadata.resource_version = None
+            source_secret.metadata.creation_timestamp = None
+            source_secret.metadata.managed_fields = None
+
+            new_secret = self.core_v1.create_namespaced_secret(namespace=new_namespace, body=source_secret)
+            print(f"success: secret {source_namespace}/{source_name} has been duplicated to {new_namespace}/{new_name}")
+            return new_secret
+
         except client.exceptions.ApiException as api_error:
             if api_error.status == 409:
-                print(f"info: secret {namespace}/{secret_name} already exists, skipping creation")
+                print(f"info: secret {new_namespace}/{new_name} already exists, skipping creation")
             else:
-                print(f"error: {utils.current_function()}: Kubernetes API error creating secret {namespace}/{secret_name}: {api_error}")
-                raise
+                print(f"error: {utils.current_function()}: Kubernetes API error creating secret {new_namespace}/{new_name}: {api_error}")
+            raise
+
         except Exception as e:
-            print(f"error: {utils.current_function()}: failed to create secret {namespace}/{secret_name}: {e}")
+            print(f"error: {utils.current_function()}: failed to duplicate secret {source_namespace}/{source_name} to {new_namespace}/{new_name} {e}")
             raise
 
 
@@ -338,16 +345,8 @@ class Kubernetes:
     def can_i_create_secrets(self, namespace: str) -> bool:
         """Check if the current service account has permission to create secrets in the target namespace"""
         # Build the access review request
-        action = client.V1ResourceAttributes(
-            namespace=namespace,
-            verb="create",
-            resource="secrets"
-        )
-        access_review = client.V1SelfSubjectAccessReview(
-            spec=client.V1SelfSubjectAccessReviewSpec(
-                resource_attributes=action
-            )
-        )
+        action = client.V1ResourceAttributes(namespace=namespace, verb="create", resource="secrets")
+        access_review = client.V1SelfSubjectAccessReview(spec=client.V1SelfSubjectAccessReviewSpec(resource_attributes=action))
         
         try:
             result = self.auth_v1.create_self_subject_access_review(access_review)
@@ -355,3 +354,15 @@ class Kubernetes:
         except Exception as e:
             print(f"warning: failed to check RBAC permissions in namespace {namespace}: {e}")
             return False
+
+
+    def get_current_namespace(self):
+        """Get namespace of the current working workload"""
+        try:
+            ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+            if os.path.exists(ns_path):
+                with open(ns_path) as f:
+                    return f.read().strip()
+        except Exception as e:
+            print(f"error: failed to get current namespace: {e}")
+            return None

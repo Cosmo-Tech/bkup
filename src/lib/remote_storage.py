@@ -7,23 +7,30 @@ import fsspec
 import argparse
 
 import src.lib.utils as utils
+from src.lib.kubernetes import Kubernetes
 
 class RemoteStorage:
     def __init__(self):
-        self.protocol            = os.getenv('BKUP_STORAGE_PROTOCOL')
-        self.endpoint            = os.getenv('BKUP_STORAGE_ENDPOINT')
-        self.root                = os.getenv('BKUP_STORAGE_ROOT')
-        self.username            = os.getenv('BKUP_STORAGE_USERNAME')
-        self.password            = os.getenv('BKUP_STORAGE_PASSWORD')
-        self.archive_name_prefix = os.getenv('BKUP_ARCHIVE_NAME')
-        self.mount_path          = os.getenv('BKUP_MOUNT_PATH')
-        self.job_namespace       = os.getenv('BKUP_JOB_NAMESPACE')
+        self.protocol                       = os.getenv('BKUP_STORAGE_PROTOCOL')
+        self.endpoint                       = os.getenv('BKUP_STORAGE_ENDPOINT')
+        self.root                           = os.getenv('BKUP_STORAGE_ROOT')
+        self.username                       = os.getenv('BKUP_STORAGE_USERNAME')
+        # self.password                     = os.getenv('BKUP_STORAGE_PASSWORD')
+        self.storage_password_secret_name   = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
+        self.storage_password_secret_key    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
+        self.archive_name_prefix            = os.getenv('BKUP_ARCHIVE_NAME')
+        self.mount_path                     = os.getenv('BKUP_MOUNT_PATH')
+        self.job_namespace                  = os.getenv('BKUP_JOB_NAMESPACE')
 
         # Universal URL working with all drivers (waits for an additional path like f"{protocol}://{root}/{job_namespace}/{additional_path}")
         if self.job_namespace:
             self.address_prefix = f"{self.protocol}://{self.root}/{self.job_namespace}"
         else:
             self.address_prefix = f"{self.protocol}://{self.root}"
+
+        # Securely get password from secret
+        kube = Kubernetes()
+        self.password = kube.get_secret_value(namespace=self.job_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
 
         # Map our generic username/password to each drivers specific keys
         self.storage_options = {
@@ -42,7 +49,7 @@ class RemoteStorage:
 
         # Overwrite default fsspec endpoint (= s3.amazonaws.com) if it has been defined by user
         if self.endpoint:
-            storage_options["client_kwargs"] = {"endpoint_url": endpoint}
+            self.storage_options["client_kwargs"] = {"endpoint_url": self.endpoint}
 
         self.signal_file = os.path.join(self.mount_path, "signal")
         self.pipe_file = os.path.join(self.mount_path, "pipe")
@@ -205,29 +212,29 @@ class RemoteStorage:
             sys.exit(1)
 
 
-    def list_remote_backups(self):
-        """Get list of existing remote backups"""
-        try:
-            self.print_remote_storage_informations()
+    # def list_remote_backups(self):
+    #     """Get list of existing remote backups"""
+    #     try:
+    #         self.print_remote_storage_informations()
 
-            fs = fsspec.filesystem(self.protocol, **self.storage_options)
-            try:
-                files = fs.ls(self.address_prefix)
-            except FileNotFoundError:
-                print(f"no backups found (path {self.address_prefix} does not exist yet).")
-                return
+    #         fs = fsspec.filesystem(self.protocol, **self.storage_options)
+    #         try:
+    #             files = fs.ls(self.address_prefix)
+    #         except FileNotFoundError:
+    #             print(f"no backups found (path {self.address_prefix} does not exist yet)")
+    #             return
 
-            backups = [f for f in files if fs.info(f).get('type') == 'file']
-            if not backups:
-                print("  no backups found.")
-            else:
-                for f in backups:
-                    name = os.path.basename(f)
-                    info = fs.info(f)
-                    size_mb = info.get('size', 0) / (1024 * 1024)
-                    label = f"{f'{size_mb:.5f}'[:25]} MB"
-                    print(f"{label:.<30} {name}")
+    #         backups = [f for f in files if fs.info(f).get('type') == 'file']
+    #         if not backups:
+    #             print("no backups found")
+    #         else:
+    #             for f in backups:
+    #                 name = os.path.basename(f)
+    #                 info = fs.info(f)
+    #                 size_mb = info.get('size', 0) / (1024 * 1024)
+    #                 label = f"{f'{size_mb:.5f}'[:25]} MB"
+    #                 print(f"{label:.<30} {name}")
 
-        except Exception as e:
-            print(f"error: {utils.current_function()}: {e}")
-            sys.exit(1)
+    #     except Exception as e:
+    #         print(f"error: {utils.current_function()}: {e}")
+    #         sys.exit(1)

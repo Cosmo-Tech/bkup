@@ -6,13 +6,13 @@ import datetime
 import signal
 import base64
 
-from src.lib.kubernetes import Kubernetes
 import src.lib.utils as utils
+from src.lib.kubernetes import Kubernetes
 
 
 cluster_context = os.getenv('BKUP_CLUSTER_CONTEXT')
 if not cluster_context:
-    print(f"info: {utils.current_function()}: missing export BKUP_CLUSTER_CONTEXT")
+    print(f"info: {utils.current_function()} (orchestrator.py): missing export BKUP_CLUSTER_CONTEXT")
 
 kube = Kubernetes(context=cluster_context)
 
@@ -43,6 +43,24 @@ job_config_common = {
     "STORAGE_PASSWORD_SECRET_KEY":  storage_password_secret_key,
 }
 
+orchestrator_namespace = os.getenv('BKUP_ORCHESTRATOR_NAMESPACE')
+
+
+def create_jit_secret(namespace: str):
+    """Create JIT secret for remote storage access"""
+    print(f"creating JIT secret {namespace}/{storage_password_secret_name}...")
+
+    if kube.can_i_create_secrets(namespace=namespace) == True:
+        kube.duplicate_secret(source_namespace=orchestrator_namespace, source_name=storage_password_secret_name, new_namespace=namespace, new_name=storage_password_secret_name)
+
+
+def delete_jit_secret(namespace: str):
+    """Delete JIT secret of remote storage access"""
+    print(f"cleaning JIT secret {namespace}/{storage_password_secret_name}...")
+
+    if kube.can_i_create_secrets(namespace=namespace) == True:
+        kube.delete_secret(namespace=namespace, secret_name=storage_password_secret_name)
+
 
 def job_export_volumes():
     """Run Kubernetes volumes backup job"""
@@ -64,10 +82,13 @@ def job_export_volumes():
         else:
             namespaces = kube.list_namespaces()
 
+
         for n in namespaces:
             deployments     = kube.list_deployments(namespace=n)
             statefulsets    = kube.list_statefulsets(namespace=n)
             workloads       = deployments + statefulsets
+
+            create_jit_secret(namespace=n)
 
             pvc_list = kube.list_pvc(namespace=n)
             for p in pvc_list:
@@ -112,10 +133,13 @@ def job_export_volumes():
                             # Ensure replicas are restored in case of cancelled execution
                             def abort_on_signal(signum, frame):
                                 print(f"\n\ntermination signal ({signum}) received")
+                                delete_jit_secret(namespace=n)
+
                                 print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
                                 kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
                                 kube.delete_job(namespace=n, job_name=job_name_formatted)
                                 kube.wait_job_end(namespace=n, job_name=job_name_formatted)
+
                                 sys.exit(1)
                             signal.signal(signal.SIGTERM, abort_on_signal)
                             signal.signal(signal.SIGINT, abort_on_signal)
@@ -145,8 +169,11 @@ def job_export_volumes():
 
                             # Scale up workload to its original replicas quantity
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+
                         finally:
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+
+                delete_jit_secret(namespace=n)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -179,6 +206,8 @@ def job_import_volumes():
             statefulsets    = kube.list_statefulsets(namespace=n)
             workloads       = deployments + statefulsets
 
+            create_jit_secret(namespace=n)
+
             pvc_list = kube.list_pvc(namespace=n)
             for p in pvc_list:
                 for w in workloads:
@@ -222,10 +251,13 @@ def job_import_volumes():
                             # Ensure replicas are restored in case of cancelled execution
                             def abort_on_signal(signum, frame):
                                 print(f"\n\ntermination signal ({signum}) received")
+                                delete_jit_secret(namespace=n)
+
                                 print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
                                 kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
                                 kube.delete_job(namespace=n, job_name=job_name_formatted)
                                 kube.wait_job_end(namespace=n, job_name=job_name_formatted)
+
                                 sys.exit(1)
                             signal.signal(signal.SIGTERM, abort_on_signal)
                             signal.signal(signal.SIGINT, abort_on_signal)
@@ -257,6 +289,8 @@ def job_import_volumes():
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
                         finally:
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+
+                delete_jit_secret(namespace=n)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -304,7 +338,7 @@ def job_export_postgresql():
             print("\n---------------------------------------------------------------------")
             print("Kubernetes job:")
             print(f"  datetime...........................{now_str} ({now_formatted})")
-            print(f"  namespace..........................{job_namespace}")
+            print(f"  job_namespace......................{job_namespace}")
             print(f"  job_name...........................{job_name_formatted} ({job_name})")
 
             print("\nPostgreSQL instance:")
@@ -328,12 +362,17 @@ def job_export_postgresql():
             # Ensure replicas are restored in case of cancelled execution
             def abort_on_signal(signum, frame):
                 print(f"\n\ntermination signal ({signum}) received")
+                delete_jit_secret(namespace=job_namespace)
+
                 print(f"aborting backup job {job_name_formatted}...")
                 kube.delete_job(namespace=job_namespace, job_name=job_name_formatted)
                 kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
+
                 sys.exit(1)
             signal.signal(signal.SIGTERM, abort_on_signal)
             signal.signal(signal.SIGINT, abort_on_signal)
+
+            create_jit_secret(namespace=job_namespace)
 
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
@@ -362,6 +401,8 @@ def job_export_postgresql():
             kube.create_job(job_config=job_config)
 
             kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
+
+            delete_jit_secret(namespace=job_namespace)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -418,7 +459,7 @@ def job_import_postgresql(archive_name: str):
             print("\n---------------------------------------------------------------------")
             print("Kubernetes job:")
             print(f"  datetime...........................{now_str} ({now_formatted})")
-            print(f"  namespace..........................{job_namespace}")
+            print(f"  job_namespace......................{job_namespace}")
             print(f"  job_name...........................{job_name_formatted} ({job_name})")
 
             print("\nPostgreSQL instance:")
@@ -442,12 +483,17 @@ def job_import_postgresql(archive_name: str):
             # Ensure replicas are restored in case of cancelled execution
             def abort_on_signal(signum, frame):
                 print(f"\n\ntermination signal ({signum}) received")
+                delete_jit_secret(namespace=job_namespace)
+
                 print(f"aborting backup job {job_name_formatted}...")
                 kube.delete_job(namespace=job_namespace, job_name=job_name_formatted)
                 kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
+
                 sys.exit(1)
             signal.signal(signal.SIGTERM, abort_on_signal)
             signal.signal(signal.SIGINT, abort_on_signal)
+
+            create_jit_secret(namespace=job_namespace)
 
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
@@ -477,6 +523,8 @@ def job_import_postgresql(archive_name: str):
 
             kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
 
+            delete_jit_secret(namespace=job_namespace)
+
             break
 
     except Exception as e:
@@ -484,36 +532,13 @@ def job_import_postgresql(archive_name: str):
         sys.exit(1)
 
 
-# def main():
-#     parser = argparse.ArgumentParser(description="bkup orchestrator")
-#     subparsers = parser.add_subparsers(dest="command", required=True)
+# def job_list_remote_backups():
+#     try:
+#         remote_storage_password = kube.get_secret_value(namespace=secret_namespace, secret_name=secret_name, key=secret_key)
 
-#     # Command: export
-#     subparsers.add_parser("export", help="Run a Kubernetes job that will export local data to remote storage")
+#         remoteStorage = RemoteStorage(password=remote_storage_password)
+#         remoteStorage.list_remote_backups()
 
-#     # Command: import
-#     parser_restore_backup = subparsers.add_parser("import", help="Run a Kubernetes job that will import a remote archive to local storage")
-#     parser_restore_backup.add_argument("archive_name", help="Name of remote backup file to import")
-
-#     args = parser.parse_args()
-
-#     if args.command == "export":
-#         job_export_volumes()
-#         job_export_postgresql()
-
-#     elif args.command == "import":
-#         archive_name = args.archive_name
-
-#         if not 'bkup' in archive_name:
-#             print(f"error: cannot use non 'bkup' backup files")
-#             sys.exit(1)
-
-#         if 'vol' in archive_name:
-#             job_import_volumes(archive_name=archive_name)
-        
-#         if 'psql' in archive_name:
-#             job_import_postgresql(archive_name=archive_name)
-
-
-# if __name__ == "__main__":
-#     sys.exit(main())
+#     except Exception as e:
+#         print(f"error: {utils.current_function()}: failed to list existing remote backups {e}")
+#         sys.exit(1)
