@@ -21,6 +21,7 @@ class RemoteStorage:
         self.archive_name_prefix            = os.getenv('BKUP_ARCHIVE_NAME')
         self.mount_path                     = os.getenv('BKUP_MOUNT_PATH')
         self.job_namespace                  = os.getenv('BKUP_JOB_NAMESPACE')
+        self.orchestrator_namespace         = os.getenv('BKUP_ORCHESTRATOR_NAMESPACE')
 
         # Universal URL working with all drivers (waits for an additional path like f"{protocol}://{root}/{job_namespace}/{additional_path}")
         if self.job_namespace:
@@ -30,10 +31,16 @@ class RemoteStorage:
 
         if os.getenv('BKUP_STORAGE_PASSWORD'):
             self.password = os.getenv('BKUP_STORAGE_PASSWORD').strip()
-        else:
+        elif self.orchestrator_namespace:
+            # Securely get password from secret
+            kube = Kubernetes()
+            self.password = kube.get_secret_value(namespace=self.orchestrator_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
+        elif self.job_namespace:
             # Securely get password from secret
             kube = Kubernetes()
             self.password = kube.get_secret_value(namespace=self.job_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
+        else:
+            self.password = ""
 
         # Map our generic username/password to each drivers specific keys
         self.storage_options = {
@@ -54,8 +61,9 @@ class RemoteStorage:
         if self.endpoint:
             self.storage_options["client_kwargs"] = {"endpoint_url": self.endpoint}
 
-        self.signal_file = os.path.join(self.mount_path, "signal")
-        self.pipe_file = os.path.join(self.mount_path, "pipe")
+        if self.mount_path:
+            self.signal_file = os.path.join(self.mount_path, "signal")
+            self.pipe_file = os.path.join(self.mount_path, "pipe")
 
 
     def print_remote_storage_informations(self):
@@ -241,3 +249,31 @@ class RemoteStorage:
     #     except Exception as e:
     #         print(f"error: {utils.current_function()}: {e}")
     #         sys.exit(1)
+
+    def list_remote_backups(self):
+        """Get list of existing remote backups"""
+        try:
+            self.print_remote_storage_informations()
+
+            fs = fsspec.filesystem(self.protocol, **self.storage_options)
+            try:
+                entries = fs.find(self.address_prefix, detail=True)
+
+            except FileNotFoundError:
+                print(f"no backups found (path {self.address_prefix} does not exist yet)")
+                return
+
+            backups = {path: info for path, info in entries.items() if info.get('type') == 'file'}
+            if not backups:
+                print("no backups found")
+            else:
+                for path, info in backups.items():
+                    relative_path = os.path.relpath(path, self.address_prefix)
+                    size_mb = info.get('size', 0) / (1024 * 1024)
+                    label = f"{size_mb:.5f} MB"
+                    print(f"{label:.<25} {relative_path}")
+
+        except Exception as e:
+            print(f"error: {utils.current_function()}: {e}")
+            sys.exit(1)
+

@@ -366,3 +366,31 @@ class Kubernetes:
         except Exception as e:
             print(f"error: failed to get current namespace: {e}")
             return None
+
+    def list_bkup_instances(self) -> list:
+        """List all bkup instances in the cluster"""
+        try:
+            instances = []
+            service_accounts = self.core_v1.list_service_account_for_all_namespaces(label_selector="app.kubernetes.io/name=bkup")
+
+            for sa in service_accounts.items:
+                instances.append({
+                    "name": sa.metadata.name,
+                    "namespace": sa.metadata.namespace
+                })
+            return instances
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to list bkup instances: {e}")
+            return []
+
+    def get_instance_envs(self, namespace: str, instance_name: str) -> dict:
+        """Fetch environment variables from the bkup instance ConfigMap"""
+        try:
+            cm = self.core_v1.read_namespaced_config_map(namespace=namespace, name=instance_name)
+            envs = cm.data or {}
+            # Automatically set the orchestrator namespace to where the instance lives
+            envs['BKUP_ORCHESTRATOR_NAMESPACE'] = namespace
+            return envs
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to read ConfigMap {namespace}/{instance_name}: {e}")
+            return {}
