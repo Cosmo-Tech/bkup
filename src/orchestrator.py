@@ -48,16 +48,24 @@ orchestrator_namespace = os.getenv('BKUP_ORCHESTRATOR_NAMESPACE')
 
 def create_jit_secret(namespace: str):
     """Create JIT secret for remote storage access"""
-    print(f"creating JIT secret {namespace}/{storage_password_secret_name}...")
 
+    # Security to avoid the source secret
+    if namespace == orchestrator_namespace:
+        return
+
+    print(f"creating JIT secret {namespace}/{storage_password_secret_name}...")
     if kube.can_i_create_secrets(namespace=namespace) == True:
         kube.duplicate_secret(source_namespace=orchestrator_namespace, source_name=storage_password_secret_name, new_namespace=namespace, new_name=storage_password_secret_name)
 
 
 def delete_jit_secret(namespace: str):
     """Delete JIT secret of remote storage access"""
-    print(f"cleaning JIT secret {namespace}/{storage_password_secret_name}...")
 
+    # Security to avoid the source secret
+    if namespace == orchestrator_namespace:
+        return
+
+    print(f"cleaning JIT secret {namespace}/{storage_password_secret_name}...")
     if kube.can_i_create_secrets(namespace=namespace) == True:
         kube.delete_secret(namespace=namespace, secret_name=storage_password_secret_name)
 
