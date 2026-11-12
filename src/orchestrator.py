@@ -181,116 +181,236 @@ def job_export_volumes():
 
 
 
-def job_import_volumes():
+# def job_import_volumes(archive_name: str):
+#     """Run Kubernetes volumes import job"""
+#     try:
+#         print("starting Kubernetes volumes import job...")
+
+#         job_template_path="templates/volume.importer.job.yaml"
+#         if not os.path.exists(job_template_path):
+#             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
+
+#         print("fetching all informations to perform backup...")
+
+#         # User-defined list of namespaces & fallback on list of all namespaces of the cluster
+#         namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
+
+#         print(namespaces_env)
+
+#         namespaces = []
+#         if namespaces_env:
+#             for ns in namespaces_env.split(','):
+#                 namespaces.append(ns.strip())
+#         else:
+#             namespaces = kube.list_namespaces()
+
+#         print(namespaces)
+
+#         for n in namespaces:
+#             deployments     = kube.list_deployments(namespace=n)
+#             statefulsets    = kube.list_statefulsets(namespace=n)
+#             workloads       = deployments + statefulsets
+
+#             create_jit_secret(namespace=n)
+
+#             pvc_list = kube.list_pvc(namespace=n)
+#             for p in pvc_list:
+#                 for w in workloads:
+#                     mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
+#                     for m in mounts:
+#                         pvc                 = m.get("pvc")
+#                         workload_kind       = m.get("workload_kind")
+#                         workload_name       = m.get("workload_name")
+#                         container           = m.get("container")
+#                         volume              = m.get("volume")
+#                         mount_path          = m.get("mount_path")
+#                         original_replicas   = kube.get_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name)
+
+#                         try :
+#                             job_name = f"{pvc}-{container}-{volume}"
+#                             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
+#                             # 63 char max for Kubernetes names
+#                             job_name_formatted = f"bkup-vol-{job_name_hash[:40]}-{now_str}"
+
+#                             # archive_name = f"{pvc}_{volume}_{now_str}"
+
+#                             print("\n---------------------------------------------------------------------")
+#                             print("Kubernetes job:")
+#                             print(f"  datetime.............{now_str} ({now_formatted})")
+#                             print(f"  namespace............{n}")
+#                             print(f"  job_name.............{job_name_formatted} ({job_name})")
+
+#                             print("\nVolume to backup:")
+#                             print(f"  pvc..................{pvc}")
+#                             print(f"  workload_kind........{workload_kind}")
+#                             print(f"  workload_name........{workload_name}")
+#                             print(f"  container............{container}")
+#                             print(f"  volume...............{volume}")
+#                             print(f"  mount_path...........{mount_path}")
+#                             print(f"  original_replicas....{original_replicas}")
+
+#                             print("\nDestination storage:")
+#                             print(f"  archive_name.........{archive_name}")
+#                             print("---------------------------------------------------------------------\n")
+
+#                             # Ensure replicas are restored in case of cancelled execution
+#                             def abort_on_signal(signum, frame):
+#                                 print(f"\n\ntermination signal ({signum}) received")
+#                                 delete_jit_secret(namespace=n)
+
+#                                 print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
+#                                 kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
+#                                 kube.delete_job(namespace=n, job_name=job_name_formatted)
+#                                 kube.wait_job_end(namespace=n, job_name=job_name_formatted)
+
+#                                 sys.exit(1)
+#                             signal.signal(signal.SIGTERM, abort_on_signal)
+#                             signal.signal(signal.SIGINT, abort_on_signal)
+
+#                             # Add original replicas quantity to workload annotations
+#                             original_replicas_annotation = "bkup/original-replicas"
+#                             kube.add_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotations={original_replicas_annotation: str(original_replicas)})
+#                             original_replicas_from_annotation = kube.get_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotation_key=original_replicas_annotation)
+
+#                             # Scale down workload to be able claiming PVC
+#                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
+
+#                             job_config_specific = {
+#                                 "JOB_NAME":         job_name_formatted,
+#                                 "JOB_NAMESPACE":    n,
+#                                 "TEMPLATE_PATH":    job_template_path,
+#                                 "ARCHIVE_NAME":     archive_name,
+
+#                                 # Volumes
+#                                 "MOUNT_PATH":       mount_path,
+#                                 "PVC_NAME":         pvc,
+#                             }
+#                             job_config = job_config_common | job_config_specific
+#                             kube.create_job(job_config=job_config)
+
+#                             kube.wait_job_end(namespace=n, job_name=job_name_formatted)
+
+#                             # Scale up workload to its original replicas quantity
+#                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+#                         finally:
+#                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+
+#                 delete_jit_secret(namespace=n)
+
+#     except Exception as e:
+#         print(f"error: {utils.current_function()}: {e}")
+#         sys.exit(1)
+
+
+def job_import_volume(namespace: str, archive_name: str):
     """Run Kubernetes volumes import job"""
     try:
-        print("starting Kubernetes volumes import jobs...")
+        if not namespace:
+            raise ValueError("a valid target namespace must be provided.")
+        if not archive_name:
+            raise ValueError("a valid archive name must be provided.")
 
-        job_template_path="templates/volume.importer.job.yaml"
+        raw_archive = archive_name.strip().rstrip("/")
+
+        # Optional safety check: if a namespace folder is present in the path, ensure it matches the target namespace
+        path_parts = [p for p in raw_archive.split("/") if p]
+        if len(path_parts) >= 2 and path_parts[-2] != namespace:
+            raise ValueError(f"namespace mismatch: archive path specifies '{path_parts[-2]}' but target namespace is '{namespace}'.")
+
+        archive_name = os.path.basename(archive_name.strip().rstrip("/"))
+        if not archive_name.endswith(".tar.gz"):
+            raise ValueError(f"the archive must be .tar.gz")
+
+        print(f"starting Kubernetes volumes import job for archive '{archive_name}' in namespace '{namespace}'...")
+
+        job_template_path = "templates/volume.importer.job.yaml"
         if not os.path.exists(job_template_path):
             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
 
-        print("fetching all informations to perform backup...")
+        # Extract target PVC from normalized archive name ("{pvc}_{volume}_{now_str}")
+        target_pvc = archive_name.split('_')[0]
 
-        # User-defined list of namespaces & fallback on list of all namespaces of the cluster
-        namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
-        namespaces = []
-        if namespaces_env:
-            for ns in namespaces_env.split(','):
-                namespaces.append(ns.strip())
-        else:
-            namespaces = kube.list_namespaces()
+        pvc_list = kube.list_pvc(namespace=namespace)
+        if target_pvc not in pvc_list:
+            raise ValueError(f"failed to find PVC '{target_pvc}' in namespace '{namespace}'. PVC written in the backup file must exists in the namespace.")
 
-        for n in namespaces:
-            deployments     = kube.list_deployments(namespace=n)
-            statefulsets    = kube.list_statefulsets(namespace=n)
-            workloads       = deployments + statefulsets
+        target_mount = None
+        workloads = kube.list_deployments(namespace=namespace) + kube.list_statefulsets(namespace=namespace)
+        for w in workloads:
+            mounts = kube.map_mountpoints_pvc_workload(pvc_name=target_pvc, workload=w)
+            for m in mounts:
+                expected_prefix = f"{m.get('pvc')}_{m.get('volume')}_"
+                if archive_name.startswith(expected_prefix):
+                    target_mount = m
+                    break
+            if target_mount:
+                break
 
-            create_jit_secret(namespace=n)
+        if not target_mount:
+            raise ValueError(f"No active workload mounting the volume from archive '{archive_name}' found in namespace '{namespace}'.")
 
-            pvc_list = kube.list_pvc(namespace=n)
-            for p in pvc_list:
-                for w in workloads:
-                    mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
-                    for m in mounts:
-                        pvc                 = m.get("pvc")
-                        workload_kind       = m.get("workload_kind")
-                        workload_name       = m.get("workload_name")
-                        container           = m.get("container")
-                        volume              = m.get("volume")
-                        mount_path          = m.get("mount_path")
-                        original_replicas   = kube.get_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name)
+        pvc                 = target_mount.get("pvc")
+        workload_kind       = target_mount.get("workload_kind")
+        workload_name       = target_mount.get("workload_name")
+        container           = target_mount.get("container")
+        volume              = target_mount.get("volume")
+        mount_path          = target_mount.get("mount_path")
+        original_replicas   = kube.get_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name)
 
-                        try :
-                            job_name = f"{pvc}-{container}-{volume}"
-                            job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
-                            # 63 char max for Kubernetes names
-                            job_name_formatted = f"bkup-vol-{job_name_hash[:40]}-{now_str}"
+        job_name = f"{pvc}-{container}-{volume}"
+        job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
+        job_name_formatted = f"bkup-vol-import-{job_name_hash[:32]}-{now_str}"
 
-                            archive_name = f"{pvc}_{volume}_{now_str}"
+        print("\n---------------------------------------------------------------------")
+        print("Kubernetes import job:")
+        print(f"  datetime.............{now_str} ({now_formatted})")
+        print(f"  namespace............{namespace}")
+        print(f"  job_name.............{job_name_formatted} ({job_name})")
+        print("\nVolume to restore:")
+        print(f"  pvc..................{pvc}")
+        print(f"  workload.............{workload_kind}/{workload_name} (replicas: {original_replicas})")
+        print(f"  mount_path...........{mount_path}")
+        print(f"  archive_name.........{archive_name}")
+        print("---------------------------------------------------------------------\n")
 
-                            print("\n---------------------------------------------------------------------")
-                            print("Kubernetes job:")
-                            print(f"  datetime.............{now_str} ({now_formatted})")
-                            print(f"  namespace............{n}")
-                            print(f"  job_name.............{job_name_formatted} ({job_name})")
+        create_jit_secret(namespace=namespace)
 
-                            print("\nVolume to backup:")
-                            print(f"  pvc..................{pvc}")
-                            print(f"  workload_kind........{workload_kind}")
-                            print(f"  workload_name........{workload_name}")
-                            print(f"  container............{container}")
-                            print(f"  volume...............{volume}")
-                            print(f"  mount_path...........{mount_path}")
-                            print(f"  original_replicas....{original_replicas}")
+        def abort_on_signal(signum, frame):
+            print(f"\n\ntermination signal ({signum}) received")
+            delete_jit_secret(namespace=namespace)
+            print(f"aborting import job {job_name_formatted} and restoring replicas of {workload_kind} {namespace}/{workload_name} to {original_replicas}...")
+            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
+            kube.delete_job(namespace=namespace, job_name=job_name_formatted)
+            kube.wait_job_end(namespace=namespace, job_name=job_name_formatted)
+            sys.exit(1)
 
-                            print("\nDestination storage:")
-                            print(f"  archive_name.........{archive_name}")
-                            print("---------------------------------------------------------------------\n")
+        signal.signal(signal.SIGTERM, abort_on_signal)
+        signal.signal(signal.SIGINT, abort_on_signal)
 
-                            # Ensure replicas are restored in case of cancelled execution
-                            def abort_on_signal(signum, frame):
-                                print(f"\n\ntermination signal ({signum}) received")
-                                delete_jit_secret(namespace=n)
+        original_replicas_annotation = "bkup/original-replicas"
+        kube.add_workload_annotation(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, annotations={original_replicas_annotation: str(original_replicas)})
+        original_replicas_from_annotation = kube.get_workload_annotation(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, annotation_key=original_replicas_annotation)
 
-                                print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
-                                kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
-                                kube.delete_job(namespace=n, job_name=job_name_formatted)
-                                kube.wait_job_end(namespace=n, job_name=job_name_formatted)
+        try:
+            # Scale down workload to release the PVC
+            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
 
-                                sys.exit(1)
-                            signal.signal(signal.SIGTERM, abort_on_signal)
-                            signal.signal(signal.SIGINT, abort_on_signal)
+            job_config_specific = {
+                "JOB_NAME":         job_name_formatted,
+                "JOB_NAMESPACE":    namespace,
+                "TEMPLATE_PATH":    job_template_path,
+                "ARCHIVE_NAME":     archive_name,
+                "MOUNT_PATH":       mount_path,
+                "PVC_NAME":         pvc,
+            }
+            job_config = job_config_common | job_config_specific
+            kube.create_job(job_config=job_config)
+            kube.wait_job_end(namespace=namespace, job_name=job_name_formatted)
 
-                            # Add original replicas quantity to workload annotations
-                            original_replicas_annotation = "bkup/original-replicas"
-                            kube.add_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotations={original_replicas_annotation: str(original_replicas)})
-                            original_replicas_from_annotation = kube.get_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotation_key=original_replicas_annotation)
-
-                            # Scale down workload to be able claiming PVC
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
-
-                            job_config_specific = {
-                                "JOB_NAME":         job_name_formatted,
-                                "JOB_NAMESPACE":    n,
-                                "TEMPLATE_PATH":    job_template_path,
-                                "ARCHIVE_NAME":     archive_name,
-
-                                # Volumes
-                                "MOUNT_PATH":       mount_path,
-                                "PVC_NAME":         pvc,
-                            }
-                            job_config = job_config_common | job_config_specific
-                            kube.create_job(job_config=job_config)
-
-                            kube.wait_job_end(namespace=n, job_name=job_name_formatted)
-
-                            # Scale up workload to its original replicas quantity
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
-                        finally:
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
-
-                delete_jit_secret(namespace=n)
+        finally:
+            # Always restore original replicas and clean up the JIT secret
+            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
+            delete_jit_secret(namespace=namespace)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -328,7 +448,7 @@ def job_export_postgresql():
             job_name = f"psql-{postgresql_host}-{postgresql_database}"
             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
             # 63 char max for Kubernetes names
-            job_name_formatted = f"bkup-psql-{job_name_hash[:39]}-{now_str}"
+            job_name_formatted = f"bkup-psql-export-{job_name_hash[:32]}-{now_str}"
 
             archive_name_hash = hashlib.md5(postgresql_host.encode()).hexdigest()
             archive_name = f"psql_{archive_name_hash}_{now_str}"
@@ -457,7 +577,7 @@ def job_import_postgresql(archive_name: str):
             job_name = f"psql-{postgresql_host}-{postgresql_database}"
             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
             # 63 char max for Kubernetes names
-            job_name_formatted = f"bkup-psql-restore-{job_name_hash[:39]}-{now_str}"
+            job_name_formatted = f"bkup-psql-import-{job_name_hash[:40]}-{now_str}"
 
             all_image_pull_secrets = bkup_image_pull_secrets + postgresql_image_pull_secrets
 

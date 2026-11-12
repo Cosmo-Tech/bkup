@@ -26,9 +26,9 @@ spec:
               cpu: "1000m"
               memory: "512Mi"
           volumeMounts:
-            - name: volume-to-backup
+            - name: volume-to-import
               mountPath: "{{ MOUNT_PATH }}"
-              readOnly: true
+              readOnly: false
           env:
             - name: BKUP_STORAGE_PROTOCOL
               value: "{{ STORAGE_PROTOCOL }}"
@@ -57,6 +57,6 @@ spec:
               value: "{{ JOB_NAMESPACE }}"
 
       volumes:
-        - name: volume-to-backup
+        - name: volume-to-import
           persistentVolumeClaim:
             claimName: "{{ PVC_NAME }}"

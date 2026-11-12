@@ -51,7 +51,8 @@ def main():
 
     # Command: import
     parser_import = subparsers.add_parser("import", help="Run a Kubernetes job that will import a remote archive to local storage")
-    parser_import.add_argument("archive_name", help="Name of remote backup file to import")
+    parser_import.add_argument("-n", "--namespace", help="Namespace where to import remote backup file")
+    parser_import.add_argument("-f", "--file", help="Name of remote backup file to import")
 
     # Command: list
     subparsers.add_parser("list", help="List existing backups in remote storage")
@@ -66,11 +67,11 @@ def main():
         kube = Kubernetes(context=kube_context)
         instances = kube.list_bkup_instances()
         instance = selectable_menu_instance(instances=instances, target_instance=args.instance)
-        namespace = instance['namespace']
+        instance_namespace = instance['namespace']
         instance_name = instance['name']
 
-        print(f"info: loading configuration from instance {namespace}/{instance_name}...\n")
-        envs = kube.get_bkup_instance_envs(namespace=namespace, instance_name=instance_name)
+        print(f"loading configuration from instance {instance_namespace}/{instance_name}...\n")
+        envs = kube.get_bkup_instance_envs(namespace=instance_namespace, instance_name=instance_name)
         if kube_context:
             envs['BKUP_KUBE_CONTEXT'] = kube_context
 
@@ -78,7 +79,7 @@ def main():
             # Inject variables into the current process
             os.environ.update(envs)
         else:
-            print(f"error: failed to retrieve environment variables from the instance {namespace}/{instance_name}")
+            print(f"error: failed to retrieve environment variables from the instance {instance_namespace}/{instance_name}")
             sys.exit(1)
 
 
@@ -101,13 +102,14 @@ def main():
 
 
     elif args.command == "import":
-        archive_name = args.archive_name
+        import_namespace = args.namespace
+        import_file = args.file
 
-        if 'vol' in archive_name:
-            orchestrator.job_import_volumes(archive_name=archive_name)
+        if '.tar.gz' in import_file:
+            orchestrator.job_import_volume(namespace=import_namespace, archive_name=import_file)
 
-        if 'psql' in archive_name:
-            orchestrator.job_import_postgresql(archive_name=archive_name)
+        if 'psql' in import_file:
+            orchestrator.job_import_postgresql(archive_name=import_file)
 
 if __name__ == "__main__":
     main()

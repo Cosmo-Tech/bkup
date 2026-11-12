@@ -11,9 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: bkup
 data:
-  BKUP_IMAGE: "{{ .Values.workload.image.repository }}:{{ .Values.workload.image.tag }}"
+  BKUP_IMAGE_REPOSITORY: {{ .Values.workload.image.repository }}
+  BKUP_IMAGE_TAG: {{ .Values.workload.image.tag }}
   BKUP_IMAGE_PULL_POLICY: {{ .Values.workload.image.pullPolicy | quote }}
   BKUP_IMAGE_PULL_SECRETS: {{ .Values.workload.image.pullSecrets | toJson | quote }}
+
+  BKUP_ORCHESTRATOR_NAMESPACE: {{ .Release.Namespace }}
 
   # Destination storage
   BKUP_STORAGE_PROTOCOL: {{ .Values.backup.destination.protocol | quote }}

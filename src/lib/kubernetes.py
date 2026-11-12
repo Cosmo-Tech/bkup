@@ -320,10 +320,10 @@ class Kubernetes:
 
         except client.exceptions.ApiException as api_error:
             if api_error.status == 409:
-                print(f"info: secret {new_namespace}/{new_name} already exists, skipping creation")
+                print(f"secret {new_namespace}/{new_name} already exists, skipping creation")
             else:
                 print(f"error: {utils.current_function()}: Kubernetes API error creating secret {new_namespace}/{new_name}: {api_error}")
-            raise
+                raise
 
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to duplicate secret {source_namespace}/{source_name} to {new_namespace}/{new_name} {e}")
@@ -390,8 +390,8 @@ class Kubernetes:
             cm = self.core_v1.read_namespaced_config_map(namespace=namespace, name=instance_name)
             envs = cm.data
 
-            # Automatically set the orchestrator namespace to where the instance lives
-            envs['BKUP_ORCHESTRATOR_NAMESPACE'] = namespace
+            # # Automatically set the orchestrator namespace to where the instance lives
+            # envs['BKUP_ORCHESTRATOR_NAMESPACE'] = namespace
 
             return envs
         except Exception as e:
