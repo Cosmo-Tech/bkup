@@ -73,14 +73,29 @@ def job_export_volumes():
 
         print("fetching all informations to perform backup...")
 
+        # # User-defined list of namespaces & fallback on list of all namespaces of the cluster
+        # namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
+        # namespaces = []
+        # if namespaces_env:
+        #     for ns in namespaces_env.split(','):
+        #         namespaces.append(ns.strip())
+        # else:
+        #     namespaces = kube.list_namespaces()
+
         # User-defined list of namespaces & fallback on list of all namespaces of the cluster
         namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
         namespaces = []
         if namespaces_env:
-            for ns in namespaces_env.split(','):
-                namespaces.append(ns.strip())
-        else:
+            parsed_ns = yaml.safe_load(namespaces_env)
+            if isinstance(parsed_ns, list):
+                namespaces = [str(ns).strip() for ns in parsed_ns if str(ns).strip()]
+            elif isinstance(parsed_ns, str) and parsed_ns.strip():
+                namespaces = [ns.strip() for ns in parsed_ns.split(',') if ns.strip()]
+
+        if not namespaces:
             namespaces = kube.list_namespaces()
+
+        print(f"target namespaces: {namespaces}")
 
 
         for n in namespaces:
@@ -173,7 +188,7 @@ def job_export_volumes():
                         finally:
                             kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
 
-                delete_jit_secret(namespace=n)
+            delete_jit_secret(namespace=n)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")

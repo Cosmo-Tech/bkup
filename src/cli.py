@@ -96,11 +96,6 @@ def main():
         remoteStorage.list_remote_backups()
 
 
-    elif args.command == "export":
-        orchestrator.job_export_volumes()
-        orchestrator.job_export_postgresql()
-
-
     elif args.command == "import":
         import_namespace = args.namespace
         import_file = args.file
@@ -110,6 +105,12 @@ def main():
 
         if 'psql' in import_file:
             orchestrator.job_import_postgresql(archive_name=import_file)
+
+
+    elif args.command == "export":
+        orchestrator.job_export_volumes()
+        orchestrator.job_export_postgresql()
+
 
 if __name__ == "__main__":
     main()
