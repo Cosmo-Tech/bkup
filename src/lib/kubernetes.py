@@ -22,9 +22,10 @@ class Kubernetes:
 
         try:
             if is_in_cluster:
+                print("detected in_cluster context\n")
                 config.load_incluster_config()
-                print("detected in_cluster context")
             else:
+                print(f"using kube context {self.context}\n")
                 config.load_kube_config(context=self.context)
         except Exception as e:
             raise RuntimeError(f"error: {utils.current_function()}: failed to initialize Kubernetes connection with context '{self.context}': {e}")
@@ -383,13 +384,15 @@ class Kubernetes:
             print(f"error: {utils.current_function()}: failed to list bkup instances: {e}")
             return []
 
-    def get_instance_envs(self, namespace: str, instance_name: str) -> dict:
+    def get_bkup_instance_envs(self, namespace: str, instance_name: str) -> dict:
         """Fetch environment variables from the bkup instance ConfigMap"""
         try:
             cm = self.core_v1.read_namespaced_config_map(namespace=namespace, name=instance_name)
-            envs = cm.data or {}
+            envs = cm.data
+
             # Automatically set the orchestrator namespace to where the instance lives
             envs['BKUP_ORCHESTRATOR_NAMESPACE'] = namespace
+
             return envs
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read ConfigMap {namespace}/{instance_name}: {e}")

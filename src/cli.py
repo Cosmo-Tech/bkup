@@ -1,6 +1,6 @@
 import os
 import sys
-import importlib
+# import importlib
 import argparse
 from InquirerPy import inquirer
 
@@ -8,18 +8,20 @@ from src.lib.kubernetes import Kubernetes
 from src.lib.remote_storage import RemoteStorage
 
 
-def select_instance(kube: Kubernetes, requested_instance: str = None) -> dict:
-    instances = kube.list_bkup_instances()
+# def selectable_menu_instance(kube: Kubernetes, target_instance: str = None) -> dict:
+def selectable_menu_instance(instances: list, target_instance: str = None) -> dict:
+    """Selectable menu to browse instances"""
+    # instances = kube.list_bkup_instances()
 
     if not instances:
         print("error: no bkup instances found in the cluster.")
         sys.exit(1)
 
-    if requested_instance:
+    if target_instance:
         for i in instances:
-            if i["name"] == requested_instance:
+            if i["name"] == target_instance:
                 return i
-        print(f"error: instance '{requested_instance}' not found.")
+        print(f"error: instance '{target_instance}' not found.")
         sys.exit(1)
 
     choices = [
@@ -28,13 +30,7 @@ def select_instance(kube: Kubernetes, requested_instance: str = None) -> dict:
     ]
 
     try:
-        selected_instance = inquirer.select(
-            message="Please load config from a bkup instance:",
-            choices=choices,
-            pointer=">",
-            qmark="",
-            cycle=True
-        ).execute()
+        selected_instance = inquirer.select(message="Please load config from a bkup instance:", choices=choices, pointer=">", qmark="", cycle=True).execute()
     except KeyboardInterrupt:
         print("\noperation cancelled")
         sys.exit(1)
@@ -45,8 +41,8 @@ def select_instance(kube: Kubernetes, requested_instance: str = None) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="bkup CLI")
 
+    parser.add_argument("-c", "--kube-context", help="Kube context where to perform the command")
     parser.add_argument("-i", "--instance", help="Name of the bkup instance to use")
-    parser.add_argument("-n", "--namespace", help="Namespace of the bkup instance (optional)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -62,40 +58,48 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command in ["import", "list"]:
-        kube = Kubernetes()
-        selected = select_instance(kube=kube, requested_instance=args.instance)
 
-        print(f"info: loading configuration from instance {selected['namespace']}/{selected['name']}...\n")
-        envs = kube.get_instance_envs(namespace=selected['namespace'], instance_name=selected['name'])
+    kube_context = args.kube_context
+
+
+    if args.command in ["import", "list"]:
+        kube = Kubernetes(context=kube_context)
+        instances = kube.list_bkup_instances()
+        instance = selectable_menu_instance(instances=instances, target_instance=args.instance)
+        namespace = instance['namespace']
+        instance_name = instance['name']
+
+        print(f"info: loading configuration from instance {namespace}/{instance_name}...\n")
+        envs = kube.get_bkup_instance_envs(namespace=namespace, instance_name=instance_name)
+        if kube_context:
+            envs['BKUP_KUBE_CONTEXT'] = kube_context
 
         if envs:
             # Inject variables into the current process
             os.environ.update(envs)
         else:
-            print("error: failed to retrieve environment variables from the instance.")
+            print(f"error: failed to retrieve environment variables from the instance {namespace}/{instance_name}")
             sys.exit(1)
 
 
     # We only import the orchestrator now, because os.environ has been properly populated
     import src.orchestrator as orchestrator
 
-    # Just in case it was already loaded somewhere else in memory, we force a reload
-    if 'src.orchestrator' in sys.modules:
-        importlib.reload(orchestrator)
+    # # Just in case it was already loaded somewhere else in memory, we force a reload
+    # if 'src.orchestrator' in sys.modules:
+    #     importlib.reload(orchestrator)
 
-    # python -m src.cli list <namespace> <secret> <storage password key>
+
     if args.command == "list":
         remoteStorage = RemoteStorage()
         remoteStorage.list_remote_backups()
 
 
-    # python -m src.cli export
     elif args.command == "export":
         orchestrator.job_export_volumes()
         orchestrator.job_export_postgresql()
 
-    # python -m src.cli import <archive name>
+
     elif args.command == "import":
         archive_name = args.archive_name
 

@@ -29,15 +29,16 @@ class RemoteStorage:
         else:
             self.address_prefix = f"{self.protocol}://{self.root}"
 
+        self.kube_context = os.getenv('BKUP_KUBE_CONTEXT')
+        kube = Kubernetes(context=self.kube_context)
+
         if os.getenv('BKUP_STORAGE_PASSWORD'):
             self.password = os.getenv('BKUP_STORAGE_PASSWORD').strip()
         elif self.orchestrator_namespace:
             # Securely get password from secret
-            kube = Kubernetes()
             self.password = kube.get_secret_value(namespace=self.orchestrator_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
         elif self.job_namespace:
             # Securely get password from secret
-            kube = Kubernetes()
             self.password = kube.get_secret_value(namespace=self.job_namespace, secret_name=self.storage_password_secret_name, key=self.storage_password_secret_key)
         else:
             self.password = ""

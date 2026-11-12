@@ -10,11 +10,11 @@ import src.lib.utils as utils
 from src.lib.kubernetes import Kubernetes
 
 
-cluster_context = os.getenv('BKUP_CLUSTER_CONTEXT')
-if not cluster_context:
-    print(f"info: {utils.current_function()} (orchestrator.py): missing export BKUP_CLUSTER_CONTEXT")
+kube_context = os.getenv('BKUP_KUBE_CONTEXT')
+# if not kube_context:
+#     print(f"info: {utils.current_function()} (orchestrator.py): missing export BKUP_KUBE_CONTEXT")
 
-kube = Kubernetes(context=cluster_context)
+kube = Kubernetes(context=kube_context)
 
 now_formatted = datetime.datetime.now().strftime('%y-%m-%d %H:%M:%S')       # => yy-mm-dd hh:mm:ss    (to display in logs)
 now_str = now_formatted.replace("-", "").replace(":", "").replace(" ", "")  # => yymmddhhmmss         (to include in technicals names such as files, resources etc...)
@@ -535,15 +535,3 @@ def job_import_postgresql(archive_name: str):
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
         sys.exit(1)
-
-
-# def job_list_remote_backups():
-#     try:
-#         remote_storage_password = kube.get_secret_value(namespace=secret_namespace, secret_name=secret_name, key=secret_key)
-
-#         remoteStorage = RemoteStorage(password=remote_storage_password)
-#         remoteStorage.list_remote_backups()
-
-#     except Exception as e:
-#         print(f"error: {utils.current_function()}: failed to list existing remote backups {e}")
-#         sys.exit(1)
