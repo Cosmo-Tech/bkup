@@ -230,8 +230,26 @@ class Kubernetes:
             return None
 
 
+    # def scale_workload_replicas(self, namespace: str, workload_kind: str, workload_name: str, replicas: int):
+    #     """Scale a workload (= deployment, statefulset) to given replicas quantity"""
+    #     body = {"spec": {"replicas": replicas}}
+    #     try:
+    #         if workload_kind.lower() == "deployment":
+    #             self.apps_v1.patch_namespaced_deployment(name=workload_name, namespace=namespace, body=body)
+
+    #         elif workload_kind.lower() == "statefulset":
+    #             self.apps_v1.patch_namespaced_stateful_set(name=workload_name, namespace=namespace, body=body)
+
+    #         print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
+    #     except Exception as e:
+    #         print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
+
     def scale_workload_replicas(self, namespace: str, workload_kind: str, workload_name: str, replicas: int):
         """Scale a workload (= deployment, statefulset) to given replicas quantity"""
+
+        # Ensure replicas is strictly cast to integer to avoid Kubernetes 422 API errors
+        replicas = int(replicas)
+
         body = {"spec": {"replicas": replicas}}
         try:
             if workload_kind.lower() == "deployment":
@@ -243,6 +261,29 @@ class Kubernetes:
             print(f"scaled {workload_kind}/{workload_name} to {replicas} replicas")
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
+
+    # def scale_workload_replicas(self, namespace: str, workload_kind: str, workload_name: str, replicas: int):
+    #     """Scale a workload (= deployment, statefulset) to given replicas quantity"""
+    #     # Ensure replicas is strictly cast to integer to avoid Kubernetes 422 API errors
+    #     try:
+    #         target_replicas = int(replicas)
+    #     except (ValueError, TypeError):
+    #         print(f"error: {utils.current_function()}: replicas count must be an integer, got '{replicas}'")
+    #         return
+
+    #     body = {"spec": {"replicas": target_replicas}}
+    #     try:
+    #         if workload_kind.lower() == "deployment":
+    #             # self.apps_v1.patch_namespaced_deployment_scale(namespace=namespace, name=workload_name, body=body)
+    #             self.apps_v1.patch_namespaced_deployment(namespace=namespace, name=workload_name, body=body)
+
+    #         elif workload_kind.lower() == "statefulset":
+    #             # self.apps_v1.patch_namespaced_stateful_set_scale(namespace=namespace, name=workload_name, body=body)
+    #             self.apps_v1.patch_namespaced_stateful_set(namespace=namespace, name=workload_name, body=body)
+
+    #         print(f"scaled {workload_kind}/{workload_name} to {target_replicas} replicas")
+    #     except Exception as e:
+    #         print(f"error: {utils.current_function()}: failed to scale {workload_kind}/{workload_name}: {e}")
 
 
     def add_workload_annotation(self, namespace: str, workload_kind: str, workload_name: str, annotations: dict):

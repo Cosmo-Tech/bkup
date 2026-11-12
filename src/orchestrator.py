@@ -454,7 +454,9 @@ def job_export_postgresql():
         if not postgresql_values:
             print("error: missing export BKUP_POSTGRESQL_VALUES")
 
-        postgresql_configs = yaml.safe_load(postgresql_values).get("postgresql")
+        # postgresql_configs = yaml.safe_load(postgresql_values).get("postgresql")
+        postgresql_configs = yaml.safe_load(postgresql_values)
+
         for p in postgresql_configs:
             postgresql_host                 = p.get("address")
             postgresql_port                 = p.get("port")

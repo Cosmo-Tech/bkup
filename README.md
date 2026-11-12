@@ -38,6 +38,14 @@
 
 <br>
 
+## How to
+### Backup
+Trigger the cronjob installed from the Helm Chart (or wait for it)
+### Restore
+```
+python -m src.cli import -f <file_from_your_remote_storage>
+```
+
 ### Workflows
 #### Volumes
 * Run a Kubernetes job to dump content of PVC mount points
