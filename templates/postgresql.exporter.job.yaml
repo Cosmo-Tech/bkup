@@ -181,8 +181,8 @@ spec:
 
                 set_signal "dumping:$db"
 
-                # Dump data to pipe
-                pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" > "$pipe"
+                # Dump data to pipe (--clean --if-exists is to add instructions in dump file, used at the moment of the restoration)
+                pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" --clean --if-exists > "$pipe"
                 psql_exit=$?
                 if [ $psql_exit -ne 0 ]; then
                   echo "error: pg_dump failed with exit code $psql_exit for database '$db'"

@@ -67,6 +67,10 @@ class RemoteStorage:
             self.pipe_file = os.path.join(self.mount_path, "pipe")
 
 
+    def get_filesystem(self):
+        return fsspec.filesystem(self.protocol, **self.storage_options)
+
+
     def print_remote_storage_informations(self):
         """Print remote storage informations"""
         print('remote storage informations:')

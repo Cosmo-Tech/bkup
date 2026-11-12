@@ -568,8 +568,14 @@ def job_import_postgresql(archive_name: str):
         postgresql_values = os.getenv('BKUP_POSTGRESQL_VALUES')
         if not postgresql_values:
             print("error: missing export BKUP_POSTGRESQL_VALUES")
+            sys.exit(1)
 
-        postgresql_configs = yaml.safe_load(postgresql_values).get("postgresql")
+        postgresql_configs = yaml.safe_load(postgresql_values)
+        if not postgresql_configs:
+            print("warning: postgresql configurations empty in configmap.")
+            return
+
+        found_match = False
         for p in postgresql_configs:
             postgresql_host                 = p.get("address")
             postgresql_database             = p.get("database")
@@ -588,6 +594,7 @@ def job_import_postgresql(archive_name: str):
                 archive_root_path = archive_name.split("/")[0]
                 archive_name = archive_name.split("/")[1]
                 print(f"\ndetected root path '{archive_root_path}', understood to use '{archive_name}'")
+            actual_db = target_db if not postgresql_database else postgresql_database
 
             postgresql_port                 = p.get("port")
             postgresql_username             = p.get("username")
@@ -599,7 +606,7 @@ def job_import_postgresql(archive_name: str):
             postgresql_image_pull_secrets   = p.get("image").get("pullSecrets")
             job_namespace                   = p.get("namespace")
 
-            job_name = f"psql-{postgresql_host}-{postgresql_database}"
+            job_name = f"psql-{postgresql_host}-{actual_db}"
             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
             # 63 char max for Kubernetes names
             job_name_formatted = f"bkup-psql-import-{job_name_hash[:40]}-{now_str}"
@@ -615,7 +622,7 @@ def job_import_postgresql(archive_name: str):
             print("\nPostgreSQL instance:")
             print(f"  postgresql_host....................{postgresql_host}")
             print(f"  postgresql_port....................{postgresql_port}")
-            print(f"  postgresql_database................{postgresql_database}")
+            print(f"  postgresql_database................{actual_db}")
             print(f"  postgresql_username................{postgresql_username}")
             print(f"  postgresql_password_secret_name....{postgresql_password_secret_name}")
             print(f"  postgresql_password_secret_key.....{postgresql_password_secret_key}")
@@ -627,7 +634,7 @@ def job_import_postgresql(archive_name: str):
             print(f"  all_image_pull_secrets.............{all_image_pull_secrets}")
 
             print("\nDestination storage:")
-            print(f"  archive_name.......................{archive_name} (psql_{postgresql_host}_{now_str})")
+            print(f"  archive_name.......................{archive_name}")
             print("---------------------------------------------------------------------\n")
 
             # Ensure replicas are restored in case of cancelled execution
@@ -663,7 +670,7 @@ def job_import_postgresql(archive_name: str):
                 # PostgreSQL instance
                 "POSTGRESQL_HOST":                  postgresql_host,
                 "POSTGRESQL_PORT":                  postgresql_port,
-                "POSTGRESQL_DATABASE":              postgresql_database,
+                "POSTGRESQL_DATABASE":              actual_db,
                 "POSTGRESQL_USERNAME":              postgresql_username,
                 "POSTGRESQL_PASSWORD_SECRET_NAME":  postgresql_password_secret_name,
                 "POSTGRESQL_PASSWORD_SECRET_KEY":   postgresql_password_secret_key,

@@ -22,10 +22,10 @@ class Kubernetes:
 
         try:
             if is_in_cluster:
-                print("detected in_cluster context\n")
+                # print("detected in_cluster context\n")
                 config.load_incluster_config()
             else:
-                print(f"using kube context {self.context}\n")
+                # print(f"using kube context {self.context}\n")
                 config.load_kube_config(context=self.context)
         except Exception as e:
             raise RuntimeError(f"error: {utils.current_function()}: failed to initialize Kubernetes connection with context '{self.context}': {e}")
