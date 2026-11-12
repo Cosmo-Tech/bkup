@@ -1,0 +1,216 @@
+# ----- ARCHITECTURE -----
+# database (running psql instance) <-- database-restorer (containing psql) --UNIX pipe-- Python importer
+# ------------------------
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ JOB_NAMESPACE }}"
+  # labels:
+  #   bkup: job
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 86400
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      imagePullSecrets: {{ ALL_IMAGE_PULL_SECRETS | tojson }}
+      containers:
+        # --- MAIN CONTAINER: importer.py ---
+        - name: importer
+          image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
+          imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # This script waits for a UNIX pipe from the sidecar container
+              pipe="$BKUP_MOUNT_PATH/pipe"
+
+              timer=1
+              until [ -p "$pipe" ]; do
+                sleep $timer
+                timer=$(($timer+1))
+                echo "waiting for sidecar UNIX pipe at $pipe... $timer"
+              done
+
+              echo "waiting for database-restorer..."
+
+              python3 -m src.importer
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "128Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: shared
+              mountPath: "{{ MOUNT_PATH }}"
+          env:
+            - name: BKUP_STORAGE_PROTOCOL
+              value: "{{ STORAGE_PROTOCOL }}"
+            - name: BKUP_STORAGE_ENDPOINT
+              value: "{{ STORAGE_ENDPOINT }}"
+            - name: BKUP_STORAGE_ROOT
+              value: "{{ STORAGE_ROOT }}"
+            - name: BKUP_STORAGE_USERNAME
+              value: "{{ STORAGE_USERNAME }}"
+            # - name: BKUP_STORAGE_PASSWORD
+            #   value: "{{ STORAGE_PASSWORD }}"
+            - name: BKUP_STORAGE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
+                  key: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
+            # - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
+            #   value: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
+            # - name: BKUP_STORAGE_PASSWORD_SECRET_KEY
+            #   value: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
+            - name: BKUP_ARCHIVE_NAME
+              value: "{{ ARCHIVE_NAME }}"
+            - name: BKUP_MOUNT_PATH
+              value: "{{ MOUNT_PATH }}"
+            - name: BKUP_JOB_NAMESPACE
+              value: "{{ JOB_NAMESPACE }}"
+
+
+        # --- SIDECAR CONTAINER: Restore the database (with real PostgreSQL binaries) ---
+        - name: database-restorer
+          image: "{{ POSTGRESQL_IMAGE_REPOSITORY }}:{{ POSTGRESQL_IMAGE_TAG }}"
+          imagePullPolicy: "{{ POSTGRESQL_IMAGE_PULL_POLICY }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # ------------------------------------------------------
+              # Signal is a file used to communicate with the importer
+              # ------------------------------------------------------
+              signal="$BKUP_MOUNT_PATH/signal"
+              rm -f "$signal"
+
+              # Usage: get_signal
+              get_signal() {
+                if [ -f "$signal" ]; then
+                  cat "$signal"
+                fi
+              }
+
+              # Usage: set_signal <signal_str>
+              set_signal() {
+                echo $1 > "$signal"
+              }
+
+              set_signal 'starting'
+
+
+              # ------------------------------------------------------
+              # Pipe is used to stream data from the importer
+              # ------------------------------------------------------
+              pipe="$BKUP_MOUNT_PATH/pipe"
+              rm -f "$pipe"
+
+              mkfifo "$pipe"
+              if [ -p "$pipe" ]; then
+                echo "successfully created UNIX pipe at $pipe"
+              else
+                echo 'error: UNIX pipe not created, cannot synchronize with the importer container'
+                exit 1
+              fi
+
+
+              # ------------------------------------------------------
+              # Retrieve databases informations & test access
+              # ------------------------------------------------------
+              if [ -z "$PGHOST" ]; then
+                echo "error: PGHOST environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGPORT" ]; then
+                echo "error: PGPORT environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGUSER" ]; then
+                echo "error: PGUSER environment variable is missing."
+                exit 1
+              fi
+
+              if [ -z "$PGPASSWORD" ]; then
+                echo "error: PGPASSWORD environment variable is missing."
+                exit 1
+              fi
+
+              # If PGPASSWORD points to a mounted secret file, read file content
+              if [ -f "$PGPASSWORD" ]; then
+                export PGPASSWORD=$(cat "$PGPASSWORD")
+              fi
+
+              timer=1
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" >/dev/null 2>&1; do
+                sleep $timer
+                timer=$(($timer+1))
+                echo "waiting for PostgreSQL connection at $PGHOST:$PGPORT as user $PGUSER... $timer"
+              done
+
+              # For restoration, we strictly require the user to explicitly define the database(s)
+              if [ -z "$PGDATABASE" ] || [ "$PGDATABASE" = 'None' ]; then
+                echo "error: PGDATABASE environment variable is missing. You must explicitly set the database(s) to restore."
+                exit 1
+              fi
+              
+              db_list=$PGDATABASE
+
+
+              # ------------------------------------------------------
+              # Restore each database by streaming them from the pipe
+              # ------------------------------------------------------
+              echo "starting database(s) restore from $pipe..."
+              for db in $db_list; do
+                echo "restoring database '$db'..."
+
+                set_signal "restoring:$db"
+
+                # Restore data from pipe (single transaction + strict error handling)
+                psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" --single-transaction -v ON_ERROR_STOP=1 < "$pipe"
+                psql_exit=$?
+                
+                if [ $psql_exit -ne 0 ]; then
+                  echo "error: psql failed with exit code $psql_exit for database '$db'. Rollback applied."
+                  exit 1
+                fi
+
+                until [ "$(get_signal)" = "done:$db" ]; do
+                  sleep 1
+                done
+
+                echo "success: database '$db' restored"
+              done
+
+              set_signal 'finished'
+
+              exit 0
+          volumeMounts:
+            - name: shared
+              mountPath: "{{ MOUNT_PATH }}"
+          env:
+            - name: BKUP_MOUNT_PATH
+              value: "{{ MOUNT_PATH }}"
+            - name: PGHOST
+              value: "{{ POSTGRESQL_HOST }}"
+            - name: PGPORT
+              value: "{{ POSTGRESQL_PORT }}"
+            - name: PGDATABASE
+              value: "{{ POSTGRESQL_DATABASE }}"
+            - name: PGUSER
+              value: "{{ POSTGRESQL_USERNAME }}"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ POSTGRESQL_PASSWORD_SECRET_NAME }}"
+                  key: "{{ POSTGRESQL_PASSWORD_SECRET_KEY }}"
+
+      volumes:
+        - name: shared
+          emptyDir: {} # Shared space between all containers
