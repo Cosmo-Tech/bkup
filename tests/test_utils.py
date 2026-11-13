@@ -1,12 +1,14 @@
-from src.utils.psql import is_postgresql_workload
+import re
+from src.lib import utils
 
 
-def test_is_postgresql_workload():
-    # Positive cases
-    assert is_postgresql_workload({"container": "postgres", "resource": "StatefulSet/db"}) is True
-    assert is_postgresql_workload({"container": "app", "resource": "Deployment/my-psql-db"}) is True
+def test_now_format():
+    result = utils.now()
+    assert re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$", result)
 
-    # Negative cases
-    assert is_postgresql_workload({"container": "nginx", "resource": "Deployment/frontend"}) is False
-    assert is_postgresql_workload(None) is False
-    assert is_postgresql_workload({}) is False
+
+def test_current_function():
+    def sample_function():
+        return utils.current_function()
+
+    assert sample_function() == "func=sample_function"

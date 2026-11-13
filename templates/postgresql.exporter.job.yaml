@@ -7,8 +7,6 @@ kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
   namespace: "{{ JOB_NAMESPACE }}"
-  # labels:
-  #   bkup: job
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 86400
@@ -57,17 +55,11 @@ spec:
               value: "{{ STORAGE_ROOT }}"
             - name: BKUP_STORAGE_USERNAME
               value: "{{ STORAGE_USERNAME }}"
-            # - name: BKUP_STORAGE_PASSWORD
-            #   value: "{{ STORAGE_PASSWORD }}"
             - name: BKUP_STORAGE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
                   key: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
-            # - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
-            #   value: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
-            # - name: BKUP_STORAGE_PASSWORD_SECRET_KEY
-            #   value: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
