@@ -16,6 +16,9 @@ data:
   BKUP_IMAGE_PULL_POLICY: {{ .Values.workload.image.pullPolicy | quote }}
   BKUP_IMAGE_PULL_SECRETS: {{ .Values.workload.image.pullSecrets | toJson | quote }}
 
+  BKUP_POD_SECURITY_CONTEXT: {{ .Values.workload.podSecurityContext | toJson | quote }}
+  BKUP_SECURITY_CONTEXT: {{ .Values.workload.securityContext | toJson | quote }}
+
   BKUP_ORCHESTRATOR_NAMESPACE: {{ .Release.Namespace }}
 
   # Destination storage

@@ -11,10 +11,12 @@ spec:
     spec:
       restartPolicy: Never
       imagePullSecrets: {{ BKUP_IMAGE_PULL_SECRETS | tojson }}
+      securityContext: {{ BKUP_POD_SECURITY_CONTEXT | tojson }}
       containers:
         - name: importer
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
           imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
+          securityContext: {{ BKUP_SECURITY_CONTEXT | tojson }}
           command: ["python", "-m", "src.importer"]
           resources:
             requests:
@@ -27,6 +29,8 @@ spec:
             - name: volume-to-import
               mountPath: "{{ MOUNT_PATH }}"
               readOnly: false
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_STORAGE_PROTOCOL
               value: "{{ STORAGE_PROTOCOL }}"
@@ -52,3 +56,5 @@ spec:
         - name: volume-to-import
           persistentVolumeClaim:
             claimName: "{{ PVC_NAME }}"
+        - name: tmp
+          emptyDir: {}

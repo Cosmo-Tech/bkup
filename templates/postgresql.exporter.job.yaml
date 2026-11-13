@@ -20,6 +20,7 @@ spec:
         - name: exporter
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
           imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
+          securityContext: {{ BKUP_SECURITY_CONTEXT | tojson }}
           command: ["python", "-m", "src.exporter"]
           resources:
             requests:
@@ -31,6 +32,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_STORAGE_PROTOCOL
               value: "{{ STORAGE_PROTOCOL }}"
@@ -58,6 +61,12 @@ spec:
         - name: database-dumper
           image: "{{ POSTGRESQL_IMAGE_REPOSITORY }}:{{ POSTGRESQL_IMAGE_TAG }}"
           imagePullPolicy: "{{ POSTGRESQL_IMAGE_PULL_POLICY }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -180,6 +189,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
@@ -200,3 +211,5 @@ spec:
       volumes:
         - name: shared
           emptyDir: {} # Shared space between all containers
+        - name: tmp
+          emptyDir: {}

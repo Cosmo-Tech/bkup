@@ -15,11 +15,14 @@ spec:
     spec:
       restartPolicy: Never
       imagePullSecrets: {{ ALL_IMAGE_PULL_SECRETS | tojson }}
+      securityContext:
+        fsGroup: 65532
       containers:
         # --- MAIN CONTAINER: importer.py ---
         - name: importer
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
           imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
+          securityContext: {{ BKUP_SECURITY_CONTEXT | tojson }}
           command: ["python", "-m", "src.importer"]
           resources:
             requests:
@@ -31,6 +34,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_STORAGE_PROTOCOL
               value: "{{ STORAGE_PROTOCOL }}"
@@ -58,6 +63,12 @@ spec:
         - name: database-restorer
           image: "{{ POSTGRESQL_IMAGE_REPOSITORY }}:{{ POSTGRESQL_IMAGE_TAG }}"
           imagePullPolicy: "{{ POSTGRESQL_IMAGE_PULL_POLICY }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -172,6 +183,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
@@ -192,3 +205,5 @@ spec:
       volumes:
         - name: shared
           emptyDir: {} # Shared space between all containers
+        - name: tmp
+          emptyDir: {}

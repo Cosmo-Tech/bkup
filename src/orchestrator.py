@@ -27,11 +27,41 @@ storage_username                = os.getenv('BKUP_STORAGE_USERNAME')
 storage_password_secret_name    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
 storage_password_secret_key     = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
 
+DEFAULT_POD_SECURITY_CONTEXT = {
+    "runAsNonRoot": True,
+    "runAsUser": 65532,
+    "runAsGroup": 65532,
+    "fsGroup": 65532,
+}
+
+DEFAULT_SECURITY_CONTEXT = {
+    "runAsNonRoot": True,
+    "runAsUser": 65532,
+    "runAsGroup": 65532,
+    "allowPrivilegeEscalation": False,
+    "readOnlyRootFilesystem": True,
+    "capabilities": {"drop": ["ALL"]},
+}
+
+bkup_pod_security_context = (
+    yaml.safe_load(os.getenv("BKUP_POD_SECURITY_CONTEXT"))
+    if os.getenv("BKUP_POD_SECURITY_CONTEXT")
+    else DEFAULT_POD_SECURITY_CONTEXT
+)
+
+bkup_security_context = (
+    yaml.safe_load(os.getenv("BKUP_SECURITY_CONTEXT"))
+    if os.getenv("BKUP_SECURITY_CONTEXT")
+    else DEFAULT_SECURITY_CONTEXT
+)
+
 job_config_common = {
     "BKUP_IMAGE_REPOSITORY":        bkup_image_repository,
     "BKUP_IMAGE_TAG":               bkup_image_tag,
     "BKUP_IMAGE_PULL_POLICY":       bkup_image_pull_policy,
     "BKUP_IMAGE_PULL_SECRETS":      bkup_image_pull_secrets,
+    "BKUP_POD_SECURITY_CONTEXT":    bkup_pod_security_context,
+    "BKUP_SECURITY_CONTEXT":        bkup_security_context,
     "STORAGE_PROTOCOL":             storage_protocol,
     "STORAGE_ENDPOINT":             storage_endpoint,
     "STORAGE_ROOT":                 storage_root,

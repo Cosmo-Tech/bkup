@@ -1,4 +1,7 @@
-# Argument are replaced in Github workflows
+# -----------------------------------------------------------------------------
+# Arguments are replaced in Github workflows
+#  - BUILDER_IMAGE must have pip
+#  - RUNTIME_IMAGE can be python only (without pip nor bash etc..)
 ARG BUILDER_IMAGE=python:3.15-alpine
 ARG RUNTIME_IMAGE=python:3.15-alpine
 
@@ -13,9 +16,9 @@ COPY pyproject.toml /app
 COPY src /app/src
 COPY templates /app/templates
 
-RUN python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/pip install --no-cache-dir .
+RUN python -m venv /app/venv \
+    && /app/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /app/venv/bin/pip install --no-cache-dir .
 
 
 # -----------------------------------------------------------------------------
@@ -23,10 +26,10 @@ RUN python -m venv /opt/venv \
 FROM ${RUNTIME_IMAGE}
 
 ENV PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/app/venv/bin:$PATH"
 
 WORKDIR /app
-COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/venv /app/venv
 COPY *.md /app
 COPY pyproject.toml /app
 COPY src /app/src

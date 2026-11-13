@@ -11,9 +11,10 @@ on:
       - ci*
       - cd*
 
+# Cancel existing running actions (except on main where nothing is stopped)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   PRIVATE_REGISTRY:   ${{ vars.HARBOR_REGISTRY_URL }}
@@ -56,9 +57,7 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           build-args: |
-            # Image with pip for build
             BUILDER_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15-dev
-            # Image without pip for runtime
             RUNTIME_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15
 
 
