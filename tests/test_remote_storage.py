@@ -73,7 +73,7 @@ def test_remote_stream_exporter_volume(mock_fsspec_open, mock_kube_cls, base_env
 
     # Verify that the generated tar.gz archive is valid and contains the file
     buffer.seek(0)
-    with tarfile.open(fileobj=buffer, mode="r|gz") as tar:
+    with tarfile.open(fileobj=buffer, mode="r:gz") as tar:
         members = tar.getmembers()
         assert len(members) == 1
         assert members[0].name == "hello.txt"
