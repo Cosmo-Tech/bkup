@@ -1,0 +1,94 @@
+name: Build and push Docker image
+run-name: "[image] ${{ github.event.head_commit.message }}"
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+      - ci*
+      - cd*
+
+# Cancel existing running actions (except on main where nothing is stopped)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  PRIVATE_REGISTRY:   ${{ vars.HARBOR_REGISTRY_URL }}
+  PRIVATE_REPOSITORY: ${{ vars.HARBOR_REGISTRY_REPO }}
+  PRIVATE_USERNAME:   ${{ secrets.HARBOR_ROBOT_ACCOUNT_NAME }}
+  PRIVATE_PASSWORD:   ${{ secrets.HARBOR_ROBOT_ACCOUNT_SECRET }}
+
+  PUBLIC_REGISTRY:    ghcr.io
+  PUBLIC_REPOSITORY:  ${{ github.repository }}
+  PUBLIC_USERNAME:    ${{ github.actor }}
+  PUBLIC_PASSWORD:    ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  private-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Extract metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.PRIVATE_REGISTRY }}/${{ env.PRIVATE_REPOSITORY }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Login registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.PRIVATE_REGISTRY }}
+          username: ${{ env.PRIVATE_USERNAME }}
+          password: ${{ env.PRIVATE_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          build-args: |
+            BUILDER_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15-dev
+            RUNTIME_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15
+
+
+  public-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Extract metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.PUBLIC_REGISTRY }}/${{ env.PUBLIC_REPOSITORY }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+          # build-args: |
+          #   BUILDER_IMAGE=python:3.15-alpine
+          #   RUNTIME_IMAGE=python:3.15-alpine
+
+      - name: Login registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.PUBLIC_REGISTRY }}
+          username: ${{ env.PUBLIC_USERNAME }}
+          password: ${{ env.PUBLIC_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}

@@ -7,8 +7,6 @@ kind: Job
 metadata:
   name: "{{ JOB_NAME }}"
   namespace: "{{ JOB_NAMESPACE }}"
-  # labels:
-  #   bkup: job
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 86400
@@ -17,27 +15,15 @@ spec:
     spec:
       restartPolicy: Never
       imagePullSecrets: {{ ALL_IMAGE_PULL_SECRETS | tojson }}
+      securityContext:
+        fsGroup: 65532
       containers:
         # --- MAIN CONTAINER: importer.py ---
         - name: importer
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
           imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              # This script waits for a UNIX pipe from the sidecar container
-              pipe="$BKUP_MOUNT_PATH/pipe"
-
-              timer=1
-              until [ -p "$pipe" ]; do
-                sleep $timer
-                timer=$(($timer+1))
-                echo "waiting for sidecar UNIX pipe at $pipe... $timer"
-              done
-
-              echo "waiting for database-restorer..."
-
-              python3 -m src.importer
+          securityContext: {{ BKUP_SECURITY_CONTEXT | tojson }}
+          command: ["python", "-m", "src.importer"]
           resources:
             requests:
               cpu: "250m"
@@ -48,6 +34,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_STORAGE_PROTOCOL
               value: "{{ STORAGE_PROTOCOL }}"
@@ -57,29 +45,30 @@ spec:
               value: "{{ STORAGE_ROOT }}"
             - name: BKUP_STORAGE_USERNAME
               value: "{{ STORAGE_USERNAME }}"
-            # - name: BKUP_STORAGE_PASSWORD
-            #   value: "{{ STORAGE_PASSWORD }}"
             - name: BKUP_STORAGE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
                   key: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
-            # - name: BKUP_STORAGE_PASSWORD_SECRET_NAME
-            #   value: "{{ STORAGE_PASSWORD_SECRET_NAME }}"
-            # - name: BKUP_STORAGE_PASSWORD_SECRET_KEY
-            #   value: "{{ STORAGE_PASSWORD_SECRET_KEY }}"
             - name: BKUP_ARCHIVE_NAME
               value: "{{ ARCHIVE_NAME }}"
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
             - name: BKUP_JOB_NAMESPACE
               value: "{{ JOB_NAMESPACE }}"
-
+            - name: BKUP_WAIT_PIPE
+              value: "true"
 
         # --- SIDECAR CONTAINER: Restore the database (with real PostgreSQL binaries) ---
         - name: database-restorer
           image: "{{ POSTGRESQL_IMAGE_REPOSITORY }}:{{ POSTGRESQL_IMAGE_TAG }}"
           imagePullPolicy: "{{ POSTGRESQL_IMAGE_PULL_POLICY }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -194,6 +183,8 @@ spec:
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
+            - name: tmp
+              mountPath: /tmp
           env:
             - name: BKUP_MOUNT_PATH
               value: "{{ MOUNT_PATH }}"
@@ -214,3 +205,5 @@ spec:
       volumes:
         - name: shared
           emptyDir: {} # Shared space between all containers
+        - name: tmp
+          emptyDir: {}

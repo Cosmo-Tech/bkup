@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bkup"
-version = "0.0.0"
+version = "0.1.0"
 description = "Cloud-Agnostic Kubernetes Backup Tool"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12"
+requires-python = ">=3.15"
 dependencies = [
     "kubernetes",
     "psutil",

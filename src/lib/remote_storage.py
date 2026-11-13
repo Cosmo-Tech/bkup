@@ -228,33 +228,6 @@ class RemoteStorage:
             sys.exit(1)
 
 
-    # def list_remote_backups(self):
-    #     """Get list of existing remote backups"""
-    #     try:
-    #         self.print_remote_storage_informations()
-
-    #         fs = fsspec.filesystem(self.protocol, **self.storage_options)
-    #         try:
-    #             files = fs.ls(self.address_prefix)
-    #         except FileNotFoundError:
-    #             print(f"no backups found (path {self.address_prefix} does not exist yet)")
-    #             return
-
-    #         backups = [f for f in files if fs.info(f).get('type') == 'file']
-    #         if not backups:
-    #             print("no backups found")
-    #         else:
-    #             for f in backups:
-    #                 name = os.path.basename(f)
-    #                 info = fs.info(f)
-    #                 size_mb = info.get('size', 0) / (1024 * 1024)
-    #                 label = f"{f'{size_mb:.5f}'[:25]} MB"
-    #                 print(f"{label:.<30} {name}")
-
-    #     except Exception as e:
-    #         print(f"error: {utils.current_function()}: {e}")
-    #         sys.exit(1)
-
     def list_remote_backups(self):
         """Get list of existing remote backups"""
         try:
@@ -281,4 +254,3 @@ class RemoteStorage:
         except Exception as e:
             print(f"error: {utils.current_function()}: {e}")
             sys.exit(1)
-
