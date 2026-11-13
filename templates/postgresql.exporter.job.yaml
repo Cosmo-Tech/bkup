@@ -20,22 +20,7 @@ spec:
         - name: exporter
           image: "{{ BKUP_IMAGE_REPOSITORY }}:{{ BKUP_IMAGE_TAG }}"
           imagePullPolicy: "{{ BKUP_IMAGE_PULL_POLICY }}"
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              # This script waits for a UNIX pipe from the sidecar container
-              pipe="$BKUP_MOUNT_PATH/pipe"
-
-              timer=1
-              until [ -p "$pipe" ]; do
-                sleep $timer
-                timer=$(($timer+1))
-                echo "waiting for sidecar UNIX pipe at $pipe... $timer"
-              done
-
-              echo "waiting for database-dumper..."
-
-              python3 -m src.exporter
+          command: ["python", "-m", "src.exporter"]
           resources:
             requests:
               cpu: "250m"
@@ -66,7 +51,8 @@ spec:
               value: "{{ MOUNT_PATH }}"
             - name: BKUP_JOB_NAMESPACE
               value: "{{ JOB_NAMESPACE }}"
-
+            - name: BKUP_WAIT_PIPE
+              value: "true"
 
         # --- SIDECAR CONTAINER: Dump the database (with real PostgreSQL binaries) ---
         - name: database-dumper

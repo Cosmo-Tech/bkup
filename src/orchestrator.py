@@ -78,15 +78,6 @@ def job_export_volumes():
 
         print("fetching all informations to perform backup...")
 
-        # # User-defined list of namespaces & fallback on list of all namespaces of the cluster
-        # namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
-        # namespaces = []
-        # if namespaces_env:
-        #     for ns in namespaces_env.split(','):
-        #         namespaces.append(ns.strip())
-        # else:
-        #     namespaces = kube.list_namespaces()
-
         # User-defined list of namespaces & fallback on list of all namespaces of the cluster
         namespaces_env = os.getenv('BKUP_VOLUMES_NAMESPACES')
         namespaces = []
@@ -450,7 +441,6 @@ def job_import_postgresql(archive_name: str):
             print("warning: postgresql configurations empty in configmap.")
             return
 
-        found_match = False
         for p in postgresql_configs:
             postgresql_host                 = p.get("address")
             postgresql_database             = p.get("database")
