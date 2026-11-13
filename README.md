@@ -38,13 +38,31 @@
 
 <br>
 
-## How to
-### Backup
-Trigger the cronjob installed from the Helm Chart (or wait for it)
-### Restore
-```
-python -m src.cli import -f <file_from_your_remote_storage>
-```
+## Commands & usage
+### Arguments
+The table below describe the arguments of `python -m src.cli`
+command                     | usage
+---                         | ---
+`-h/--help`                 | Display help usage of the main command
+`-c/--kube-context <>`      | Specify the Kube context to use (if empty, current context is used)
+`-i/--instance <>`          | Load configuration from a bkup instance on the Kubernetes cluster (useful in case of existing multiple installations on the cluster)
+`export`                    | Entrypoint of the cronjob. :warning: Cannot be used directly on your computer
+`export --help`             | Display help usage of the `export` command
+`import`                    | Run import (= restore) Kubernetes jobs. If no argument is passed, a selectable menu will guide you through the import steps
+`import --help`             | Display help usage of the `import` command
+`import -f/--file`          | Specify a backup file to import from remote storage
+`import -n/--namespace`     | Specify a namespace where to run the backup import job
+`list`                      | List existing backups in the remote storage
+`list --help`               | Display help usage of the `list` command
+
+### Import selectable menu
+In case of no argument given to the `import` command, a selectable menu will guide you through the import steps
+> Restore example of SeaweedFS volumes & database:
+<div align="left">
+	<img height="240px" alt="demo selectable menu" src=".github/medias/readme_selectable_menu.png">
+</div>
+
+<br>
 
 ### Workflows
 #### General
