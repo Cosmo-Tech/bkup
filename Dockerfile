@@ -1,7 +1,11 @@
-# FROM python:alpine
-FROM python:3.12-alpine
+# Argument are replaced in Github workflows
+ARG BUILDER_IMAGE=python:3.15-alpine
+ARG RUNTIME_IMAGE=python:3.15-alpine
 
-ENV PYTHONUNBUFFERED=1
+
+# -----------------------------------------------------------------------------
+# Builder with pip
+FROM ${BUILDER_IMAGE} AS builder
 
 WORKDIR /app
 COPY *.md /app
@@ -9,14 +13,23 @@ COPY pyproject.toml /app
 COPY src /app/src
 COPY templates /app/templates
 
-
-# RUN apk add --no-cache --virtual .build-deps gcc musl-dev python3-dev libffi-dev \
-#     && pip install --no-cache-dir . \
-#     && apk del .build-deps
-
-RUN pip install --no-cache-dir .
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir .
 
 
-# CMD ["bkup", "--job"]
-# CMD ["bkup"]
+# -----------------------------------------------------------------------------
+# Runtime
+FROM ${RUNTIME_IMAGE}
+
+ENV PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY *.md /app
+COPY pyproject.toml /app
+COPY src /app/src
+COPY templates /app/templates
+
 CMD ["bkup", "export"]

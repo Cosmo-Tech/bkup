@@ -55,6 +55,11 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
+          build-args: |
+            # Image with pip for build
+            BUILDER_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15-dev
+            # Image without pip for runtime
+            RUNTIME_IMAGE=${{ env.PRIVATE_REGISTRY }}/proxy-chainguard/cosmotech/python:3.15
 
 
   public-registry:
@@ -71,6 +76,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest
+          # build-args: |
+          #   BUILDER_IMAGE=python:3.15-alpine
+          #   RUNTIME_IMAGE=python:3.15-alpine
 
       - name: Login registry
         uses: docker/login-action@v3
