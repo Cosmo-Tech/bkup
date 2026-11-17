@@ -26,9 +26,10 @@
 
 * From CLI
   ```
-  python -m .venv
+  uv python install 3.15
+  uv venv --python 3.15
   source .venv/bin/activate
-  pip install .
+  uv pip install .
   ```
 
 * From Helm Chart

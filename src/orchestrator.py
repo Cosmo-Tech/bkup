@@ -80,7 +80,7 @@ def create_jit_secret(namespace: str):
         return
 
     print(f"creating JIT secret {namespace}/{storage_password_secret_name}...")
-    if kube.can_i_create_secrets(namespace=namespace) == True:
+    if kube.can_i_create_secrets(namespace=namespace):
         kube.duplicate_secret(source_namespace=orchestrator_namespace, source_name=storage_password_secret_name, new_namespace=namespace, new_name=storage_password_secret_name)
 
 
@@ -92,7 +92,7 @@ def delete_jit_secret(namespace: str):
         return
 
     print(f"cleaning JIT secret {namespace}/{storage_password_secret_name}...")
-    if kube.can_i_create_secrets(namespace=namespace) == True:
+    if kube.can_i_create_secrets(namespace=namespace):
         kube.delete_secret(namespace=namespace, secret_name=storage_password_secret_name)
 
 

@@ -35,4 +35,5 @@ COPY pyproject.toml /app
 COPY src /app/src
 COPY templates /app/templates
 
+ENTRYPOINT []
 CMD ["bkup", "export"]

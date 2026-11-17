@@ -184,7 +184,7 @@ class Kubernetes:
             start_time = time.time()
             while time.time() - start_time < 600:
                 try:
-                    job = self.batch_v1.read_namespaced_job(namespace=namespace, name=job_name)
+                    self.batch_v1.read_namespaced_job(namespace=namespace, name=job_name)
                     status = self.get_job_status(namespace=namespace, job_name=job_name)
 
                     if status == 'succeeded':
