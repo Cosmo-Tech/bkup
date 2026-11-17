@@ -4,7 +4,6 @@ import yaml
 import hashlib
 import datetime
 import signal
-import base64
 
 import src.lib.utils as utils
 from src.lib.kubernetes import Kubernetes
@@ -238,7 +237,7 @@ def job_import_volume(namespace: str, archive_name: str):
 
         archive_name = os.path.basename(archive_name.strip().rstrip("/"))
         if not archive_name.endswith(".tar.gz"):
-            raise ValueError(f"the archive must be .tar.gz")
+            raise ValueError("the archive must be .tar.gz")
 
         print(f"starting Kubernetes volumes import job for archive '{archive_name}' in namespace '{namespace}'...")
 

@@ -4,7 +4,6 @@ import time
 import tarfile
 import gzip
 import fsspec
-import argparse
 
 import src.lib.utils as utils
 from src.lib.kubernetes import Kubernetes

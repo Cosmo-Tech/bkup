@@ -77,6 +77,8 @@ spec:
               # ------------------------------------------------------
               signal="$BKUP_MOUNT_PATH/signal"
               rm -f "$signal"
+              touch "$signal"
+              chmod 664 "$signal"
 
               # Usage: get_signal
               get_signal() {
@@ -89,7 +91,6 @@ spec:
               set_signal() {
                 echo $1 > "$signal"
               }
-
               set_signal 'starting'
 
 
@@ -99,7 +100,7 @@ spec:
               pipe="$BKUP_MOUNT_PATH/pipe"
               rm -f "$pipe"
 
-              mkfifo "$pipe"
+              mkfifo -m 660 "$pipe"
               if [ -p "$pipe" ]; then
                 echo "successfully created UNIX pipe at $pipe"
               else
