@@ -1,3 +1,8 @@
+![Lint](https://github.com/Cosmo-Tech/bkup/actions/workflows/linter.yaml/badge.svg)
+![Tests](https://github.com/Cosmo-Tech/bkup/actions/workflows/unit-tests.yaml/badge.svg)
+![Build & package](https://github.com/Cosmo-Tech/bkup/actions/workflows/docker-image.yaml/badge.svg)
+
+
 # bkup
 **Cloud-Agnostic & Kubernetes-native backup tool**
 
