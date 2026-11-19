@@ -183,3 +183,40 @@ def test_job_import_postgresql(orch, monkeypatch):
     assert job_cfg["ARCHIVE_NAME"] == archive
     assert job_cfg["POSTGRESQL_DATABASE"] == "appdb"
     assert job_cfg["TEMPLATE_PATH"] == "templates/postgresql.importer.job.yaml"
+
+
+def test_run_job_with_hooks(orch):
+    hooks = {
+        "pre": [
+            {
+                "apiVersion": "postgresql.cnpg.io/v1",
+                "kind": "Cluster",
+                "namespace": "harbor",
+                "name": "harbor-postgresql",
+                "patch": {"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}},
+            }
+        ],
+        "post": [
+            {
+                "apiVersion": "postgresql.cnpg.io/v1",
+                "kind": "Cluster",
+                "namespace": "harbor",
+                "name": "harbor-postgresql",
+                "patch": {"metadata": {"annotations": {"cnpg.io/hibernation": "on"}}},
+            }
+        ],
+    }
+
+    job_config = {
+        "JOB_NAMESPACE": "harbor",
+        "JOB_NAME": "bkup-psql-test",
+    }
+
+    orch.run_job(job_config=job_config, hooks=hooks)
+
+    assert orch.kube.patch_resource.call_count == 2
+    calls = orch.kube.patch_resource.call_args_list
+    assert calls[0].kwargs["patch"] == {"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}}
+    assert calls[1].kwargs["patch"] == {"metadata": {"annotations": {"cnpg.io/hibernation": "on"}}}
+    orch.kube.create_job.assert_called_once_with(job_config=job_config)
+    orch.kube.wait_job_end.assert_called_once_with(namespace="harbor", job_name="bkup-psql-test")

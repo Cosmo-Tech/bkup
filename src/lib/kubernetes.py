@@ -4,7 +4,7 @@ import yaml
 import jinja2
 import base64
 from pathlib import Path
-from kubernetes import client, config
+from kubernetes import client, config, dynamic
 
 import src.lib.utils as utils
 
@@ -31,6 +31,8 @@ class Kubernetes:
         self.batch_v1 = client.BatchV1Api()
         self.auth_v1 = client.AuthorizationV1Api()
         # self.storage_v1 = client.StorageV1Api()
+        self.dynamic_client = dynamic.DynamicClient(client.ApiClient())
+
 
 
     def list_namespaces(self) -> list:
@@ -300,7 +302,7 @@ class Kubernetes:
             return None
 
 
-    def duplicate_secret(self, source_namespace:str, source_name: str, new_namespace:str, new_name:str):
+    def duplicate_secret(self, source_namespace: str, source_name: str, new_namespace:str, new_name:str):
         """Duplicate a secret to another namespace"""
         try:
             source_secret = self.core_v1.read_namespaced_secret(namespace=source_namespace, name=source_name)
@@ -392,3 +394,15 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read ConfigMap {namespace}/{instance_name}: {e}")
             return {}
+
+
+    def patch_resource(self, api_version: str, kind: str, namespace: str, name: str, patch: dict) -> bool:
+        """Patch any Kubernetes resource"""
+        try:
+            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind)
+            resource.patch(namespace=namespace, name=name, body=patch, content_type="application/merge-patch+json")
+            print(f"successfully patched {kind}/{name} in {namespace}")
+            return True
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to patch {kind}/{name} in {namespace}: {e}")
+            return False

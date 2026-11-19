@@ -33,3 +33,4 @@ data:
   BKUP_VOLUMES_NAMESPACES: {{ .Values.backup.volume.namespaces | toJson | quote }}
   BKUP_POSTGRESQL_VALUES: |
     {{- toYaml .Values.backup.postgresql | nindent 4 }}
+  BKUP_HOOKS: {{ .Values.backup.hooks | toJson | quote }}

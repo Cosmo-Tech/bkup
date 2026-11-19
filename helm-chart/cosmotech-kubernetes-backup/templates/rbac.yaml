@@ -28,11 +28,6 @@ rules:
       - "nodes"
     verbs: ["get", "list", "watch"]
 
-  # - apiGroups: [""]
-  #   resources:
-  #     - "configmaps"
-  #   verbs: ["get", "list", "watch", "create", "update", "patch"]
-
   - apiGroups: [""]
     resources:
       - "secrets"
@@ -51,10 +46,9 @@ rules:
       - "jobs/status"
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  # - apiGroups: ["storage.k8s.io"]
-  #   resources:
-  #     - "volumeattachments"
-  #   verbs: ["get", "list", "watch"]
+  {{- with .Values.rbac.extraRules }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

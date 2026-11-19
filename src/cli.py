@@ -249,13 +249,18 @@ def import_wizard(args, kube_context):
                 continue
 
             import src.orchestrator as orchestrator
-            for file_item in selected_files:
-                print(f"\n--- Restoring {file_item} ---")
-                if '.tar.gz' in file_item:
-                    orchestrator.job_import_volume(namespace=selected_namespace, archive_name=file_item)
-                elif 'psql' in file_item:
-                    orchestrator.job_import_postgresql(archive_name=file_item)
-            
+
+            global_hooks = os.getenv("BKUP_HOOKS")
+            try:
+                orchestrator.hook_pre(global_hooks, stage="global-pre")
+                for file_item in selected_files:
+                    print(f"\n--- Restoring {file_item} ---")
+                    if '.tar.gz' in file_item:
+                        orchestrator.job_import_volume(namespace=selected_namespace, archive_name=file_item)
+                    elif 'psql' in file_item:
+                        orchestrator.job_import_postgresql(archive_name=file_item)
+            finally:
+                orchestrator.hook_post(global_hooks, stage="global-post")
             break
 
 
@@ -322,8 +327,13 @@ def main():
         
         elif args.command == "export":
             import src.orchestrator as orchestrator
-            orchestrator.job_export_volumes()
-            orchestrator.job_export_postgresql()
+            global_hooks = os.getenv("BKUP_HOOKS")
+            try:
+                orchestrator.hook_pre(global_hooks, stage="global-pre")
+                orchestrator.job_export_volumes()
+                orchestrator.job_export_postgresql()
+            finally:
+                orchestrator.hook_post(global_hooks, stage="global-post")
 
 
 if __name__ == "__main__":

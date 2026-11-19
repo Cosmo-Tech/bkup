@@ -154,3 +154,34 @@ backup:
   volume:
     # Target specific namespaces to backup (if empty, all namespaces will be targetted)
     namespaces: []
+
+  # Global pre/post hooks (generic Kubernetes resource patches)
+  hooks:
+    # e.g:
+    # pre:
+    #   - apiVersion: apps/v1
+    #     kind: Deployment
+    #     namespace: cnpg-system
+    #     name: cnpg-controller-manager
+    #     patch:
+    #       spec:
+    #         replicas: 1
+    pre: []
+    # e.g:
+    # post:
+    #   - apiVersion: apps/v1
+    #     kind: Deployment
+    #     namespace: cnpg-system
+    #     name: cnpg-controller-manager
+    #     patch:
+    #       spec:
+    #         replicas: 0
+    post: []
+
+rbac:
+  # Optional extra RBAC rules required by custom hooks
+  extraRules: []
+  # e.g:
+  # - apiGroups: ["postgresql.cnpg.io"]
+  #   resources: ["clusters"]
+  #   verbs: ["get", "list", "patch"]
