@@ -143,6 +143,32 @@ backup:
         pullPolicy: ""
       # Namespace where to run the Kubernetes job
       namespace: ""
+      # Per-instance pre/post hooks (generic Kubernetes resource patches)
+      hooks:
+        # e.g:
+        # pre:
+        #   - apiVersion: postgresql.cnpg.io/v1
+        #     kind: Cluster
+        #     namespace: mynamespace
+        #     name: mynamespace-postgresql
+        #     patch:
+        #       metadata:
+        #         annotations:
+        #           cnpg.io/hibernation: "off"
+        pre: []
+        # e.g:
+        # post:
+        #   - apiVersion: postgresql.cnpg.io/v1
+        #     kind: Cluster
+        #     namespace: mynamespace
+        #     name: mynamespace-postgresql
+        #     waitSeconds: 20
+        #     patch:
+        #       metadata:
+        #         annotations:
+        #           cnpg.io/hibernation: "on"
+        post: []
+
 
   # Configure the job backup type for volumes
   # e.g:

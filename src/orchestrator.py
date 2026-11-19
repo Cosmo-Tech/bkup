@@ -176,7 +176,9 @@ def run_job(job_config: dict, hooks: dict | str = None, manage_jit_secret: bool 
             kube.scale_workload_replicas(namespace=namespace, workload_kind=workload["kind"], workload_name=workload["name"], replicas=workload["replicas"])
 
         hook_post(hooks, stage="job-post")
-        delete_jit_secret(namespace=namespace)
+
+        if manage_jit_secret:
+            delete_jit_secret(namespace=namespace)
 
 
 def job_export_volumes():
