@@ -396,6 +396,7 @@ class Kubernetes:
             return {}
 
 
+    # Useful for hooks
     def patch_resource(self, api_version: str, kind: str, namespace: str, name: str, patch: dict) -> bool:
         """Patch any Kubernetes resource"""
         try:
@@ -406,3 +407,28 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to patch {kind}/{name} in {namespace}: {e}")
             return False
+
+    # Useful for hooks
+    def get_resource_field(self, api_version: str, kind: str, namespace: str, name: str, field_path: list):
+        """Get any field value from a Kubernetes resource using a list of keys"""
+        try:
+            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind)
+            obj = resource.get(namespace=namespace, name=name)
+
+            val = obj.to_dict()
+            for key in field_path:
+                if isinstance(val, dict) and key in val:
+                    val = val[key]
+                else:
+                    return None
+            return val
+
+        except client.exceptions.ApiException as api_err:
+            if api_err.status == 404:
+                print(f"error: {kind}/{name} not found in {namespace}")
+            else:
+                print(f"error: {utils.current_function()}: API error reading {kind}/{name}: {api_err}")
+            return None
+        except Exception as e:
+            print(f"error: {utils.current_function()}: failed to read {kind}/{name}: {e}")
+            return None

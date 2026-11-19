@@ -146,8 +146,19 @@ backup:
       # Per-instance pre/post hooks (generic Kubernetes resource patches)
       hooks:
         # e.g:
+        # Hooks are designed to edit anything on resources before or after running the backups.
+        # For example it's useful to ensure a pod PostgreSQL pod is well-running (bkup jobs requires PostgreSQL to be available to use pg_dump)
+        # Example of pre & post hooks to save a Cloudnative-PG hibernation annotation, patch it & restore it (an autostop may have been setuped...)
         # pre:
-        #   - apiVersion: postgresql.cnpg.io/v1
+        #   - action: copy_manifest_part
+        #     apiVersion: postgresql.cnpg.io/v1
+        #     kind: Cluster
+        #     namespace: mynamespace
+        #     name: mynamespace-postgresql
+        #     sourcePath: [metadata, annotations, cnpg.io/hibernation]
+        #     targetPath: [metadata, annotations, bkup/original-cnpg-hibernation]
+        #   - action: patch
+        #     apiVersion: postgresql.cnpg.io/v1
         #     kind: Cluster
         #     namespace: mynamespace
         #     name: mynamespace-postgresql
@@ -155,20 +166,18 @@ backup:
         #       metadata:
         #         annotations:
         #           cnpg.io/hibernation: "off"
+        #     waitSeconds: 20
         pre: []
         # e.g:
         # post:
-        #   - apiVersion: postgresql.cnpg.io/v1
+        #   - action: copy_manifest_part
+        #     apiVersion: postgresql.cnpg.io/v1
         #     kind: Cluster
         #     namespace: mynamespace
         #     name: mynamespace-postgresql
-        #     waitSeconds: 20
-        #     patch:
-        #       metadata:
-        #         annotations:
-        #           cnpg.io/hibernation: "on"
+        #     sourcePath: [metadata, annotations, bkup/original-cnpg-hibernation]
+        #     targetPath: [metadata, annotations, cnpg.io/hibernation]
         post: []
-
 
   # Configure the job backup type for volumes
   # e.g:
@@ -188,7 +197,7 @@ backup:
     #   - apiVersion: apps/v1
     #     kind: Deployment
     #     namespace: cnpg-system
-    #     name: cnpg-controller-manager
+    #     name: cnpg-cloudnative-pg
     #     patch:
     #       spec:
     #         replicas: 1
@@ -198,7 +207,7 @@ backup:
     #   - apiVersion: apps/v1
     #     kind: Deployment
     #     namespace: cnpg-system
-    #     name: cnpg-controller-manager
+    #     name: cnpg-cloudnative-pg
     #     patch:
     #       spec:
     #         replicas: 0

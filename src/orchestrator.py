@@ -112,16 +112,46 @@ def _execute_hooks(hooks: dict | str, key: str, stage: str):
 
     print(f"executing {stage} hooks...")
     for h in actions:
-        kube.patch_resource(
-            api_version=h.get("apiVersion"),
-            kind=h.get("kind"),
-            namespace=h.get("namespace"),
-            name=h.get("name"),
-            patch=h.get("patch"),
-        )
+        # Default action is "patch"
+        action = h.get("action", "patch")
+
+        api_version = h.get("apiVersion")
+        kind = h.get("kind")
+        namespace = h.get("namespace")
+        name = h.get("name")
+
+        if action == "copy_manifest_part":
+            source_path = h.get("sourcePath")
+            target_path = h.get("targetPath")
+            print(f"copying manifest part {source_path} to {target_path} on {kind}/{name}...")
+
+            val = kube.get_resource_field(api_version, kind, namespace, name, source_path)
+
+            patch = val
+            for p_key in reversed(target_path):
+                patch = {p_key: patch}
+
+            kube.patch_resource(
+                api_version=api_version,
+                kind=kind,
+                namespace=namespace,
+                name=name,
+                patch=patch
+            )
+
+        elif action == "patch":
+            patch = h.get("patch")
+            kube.patch_resource(
+                api_version=api_version,
+                kind=kind,
+                namespace=namespace,
+                name=name,
+                patch=patch
+            )
+
         wait_seconds = h.get("waitSeconds")
         if wait_seconds:
-            print(f"waiting {wait_seconds}s after hook on {h.get('kind')}/{h.get('name')}...")
+            print(f"waiting {wait_seconds}s after hook on {kind}/{name}...")
             time.sleep(int(wait_seconds))
 
 
