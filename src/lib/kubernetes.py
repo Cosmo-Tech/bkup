@@ -289,18 +289,18 @@ class Kubernetes:
             encoded_val = secret.data[key]
             return base64.b64decode(encoded_val).decode('utf-8')
             
-        except client.exceptions.ApiException as api_err:
-            if api_err.status == 404:
+        except client.exceptions.ApiException as api_error:
+            if api_error.status == 404:
                 print(f"error: secret {namespace}/{secret_name} not found")
             else:
-                print(f"error: {utils.current_function()}: Kubernetes API error reading secret {namespace}/{secret_name}: {api_err}")
+                print(f"error: {utils.current_function()}: Kubernetes API error reading secret {namespace}/{secret_name}: {api_error}")
             return None
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read secret {namespace}/{secret_name}: {e}")
             return None
 
 
-    def duplicate_secret(self, source_namespace:str, source_name: str, new_namespace:str, new_name:str):
+    def duplicate_secret(self, source_namespace: str, source_name: str, new_namespace: str, new_name: str):
         """Duplicate a secret to another namespace"""
         try:
             source_secret = self.core_v1.read_namespaced_secret(namespace=source_namespace, name=source_name)

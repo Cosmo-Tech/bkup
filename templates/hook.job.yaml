@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ JOB_NAME }}"
+  namespace: "{{ JOB_NAMESPACE }}"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: "{{ SERVICE_ACCOUNT_NAME }}"
+      imagePullSecrets: {{ ALL_IMAGE_PULL_SECRETS | tojson }}
+      securityContext: {{ BKUP_POD_SECURITY_CONTEXT | tojson }}
+      containers:
+        - name: hook
+          image: "{{ HOOK_IMAGE_REPOSITORY }}:{{ HOOK_IMAGE_TAG }}"
+          imagePullPolicy: "{{ HOOK_IMAGE_PULL_POLICY }}"
+          securityContext: {{ BKUP_SECURITY_CONTEXT | tojson }}
+          command: {{ HOOK_COMMAND | tojson }}
+          args: {{ HOOK_ARGS | tojson }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
