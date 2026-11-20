@@ -15,7 +15,6 @@ def k8s():
         patch("src.lib.kubernetes.client.AppsV1Api"),
         patch("src.lib.kubernetes.client.BatchV1Api"),
         patch("src.lib.kubernetes.client.AuthorizationV1Api"),
-        patch("src.lib.kubernetes.dynamic.DynamicClient"),
     ):
         instance = Kubernetes(context="test-context")
         return instance
@@ -29,7 +28,6 @@ def test_init_in_cluster():
         patch("src.lib.kubernetes.client.AppsV1Api"),
         patch("src.lib.kubernetes.client.BatchV1Api"),
         patch("src.lib.kubernetes.client.AuthorizationV1Api"),
-        patch("src.lib.kubernetes.dynamic.DynamicClient"),
     ):
         Kubernetes()
         mock_incluster.assert_called_once()
@@ -236,27 +234,3 @@ def test_list_bkup_instances_and_envs(k8s):
     k8s.core_v1.read_namespaced_config_map.return_value = cm
 
     assert k8s.get_bkup_instance_envs("bkup-ns", "bkup-prod") == {"BKUP_STORAGE_PROTOCOL": "s3"}
-
-
-def test_patch_resource(k8s):
-    mock_resource = MagicMock()
-    k8s.dynamic_client.resources.get.return_value = mock_resource
-
-    result = k8s.patch_resource(
-        api_version="postgresql.cnpg.io/v1",
-        kind="Cluster",
-        namespace="harbor",
-        name="harbor-postgresql",
-        patch={"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}},
-    )
-
-    assert result is True
-    k8s.dynamic_client.resources.get.assert_called_once_with(
-        api_version="postgresql.cnpg.io/v1", kind="Cluster"
-    )
-    mock_resource.patch.assert_called_once_with(
-        name="harbor-postgresql",
-        namespace="harbor",
-        body={"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}},
-        content_type="application/merge-patch+json",
-    )

@@ -4,7 +4,7 @@ import yaml
 import jinja2
 import base64
 from pathlib import Path
-from kubernetes import client, config, dynamic
+from kubernetes import client, config
 
 import src.lib.utils as utils
 
@@ -31,8 +31,6 @@ class Kubernetes:
         self.batch_v1 = client.BatchV1Api()
         self.auth_v1 = client.AuthorizationV1Api()
         # self.storage_v1 = client.StorageV1Api()
-        self.dynamic_client = dynamic.DynamicClient(client.ApiClient())
-
 
 
     def list_namespaces(self) -> list:
@@ -394,41 +392,3 @@ class Kubernetes:
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read ConfigMap {namespace}/{instance_name}: {e}")
             return {}
-
-
-    # Useful for hooks
-    def patch_resource(self, api_version: str, kind: str, namespace: str, name: str, patch: dict) -> bool:
-        """Patch any Kubernetes resource"""
-        try:
-            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind)
-            resource.patch(namespace=namespace, name=name, body=patch, content_type="application/merge-patch+json")
-            print(f"successfully patched {kind}/{name} in {namespace}")
-            return True
-        except Exception as e:
-            print(f"error: {utils.current_function()}: failed to patch {kind}/{name} in {namespace}: {e}")
-            return False
-
-
-    # Useful for hooks
-    def get_resource_field(self, api_version: str, kind: str, namespace: str, name: str, field: list):
-        """Get any field value from a Kubernetes resource using a list of keys"""
-        try:
-            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind).get(namespace=namespace, name=name)
-
-            value = resource.to_dict()
-            for key in field:
-                if isinstance(value, dict) and key in value:
-                    value = value[key]
-                else:
-                    return None
-            return value
-
-        except client.exceptions.ApiException as api_error:
-            if api_error.status == 404:
-                print(f"error: {kind}/{name} not found in {namespace}")
-            else:
-                print(f"error: {utils.current_function()}: API error reading {kind}/{name}: {api_error}")
-            return None
-        except Exception as e:
-            print(f"error: {utils.current_function()}: failed to read {kind}/{name}: {e}")
-            return None
