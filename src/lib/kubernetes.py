@@ -291,18 +291,18 @@ class Kubernetes:
             encoded_val = secret.data[key]
             return base64.b64decode(encoded_val).decode('utf-8')
             
-        except client.exceptions.ApiException as api_err:
-            if api_err.status == 404:
+        except client.exceptions.ApiException as api_error:
+            if api_error.status == 404:
                 print(f"error: secret {namespace}/{secret_name} not found")
             else:
-                print(f"error: {utils.current_function()}: Kubernetes API error reading secret {namespace}/{secret_name}: {api_err}")
+                print(f"error: {utils.current_function()}: Kubernetes API error reading secret {namespace}/{secret_name}: {api_error}")
             return None
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read secret {namespace}/{secret_name}: {e}")
             return None
 
 
-    def duplicate_secret(self, source_namespace: str, source_name: str, new_namespace:str, new_name:str):
+    def duplicate_secret(self, source_namespace: str, source_name: str, new_namespace: str, new_name: str):
         """Duplicate a secret to another namespace"""
         try:
             source_secret = self.core_v1.read_namespaced_secret(namespace=source_namespace, name=source_name)
@@ -408,26 +408,26 @@ class Kubernetes:
             print(f"error: {utils.current_function()}: failed to patch {kind}/{name} in {namespace}: {e}")
             return False
 
+
     # Useful for hooks
-    def get_resource_field(self, api_version: str, kind: str, namespace: str, name: str, field_path: list):
+    def get_resource_field(self, api_version: str, kind: str, namespace: str, name: str, field: list):
         """Get any field value from a Kubernetes resource using a list of keys"""
         try:
-            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind)
-            obj = resource.get(namespace=namespace, name=name)
+            resource = self.dynamic_client.resources.get(api_version=api_version, kind=kind).get(namespace=namespace, name=name)
 
-            val = obj.to_dict()
-            for key in field_path:
-                if isinstance(val, dict) and key in val:
-                    val = val[key]
+            value = resource.to_dict()
+            for key in field:
+                if isinstance(value, dict) and key in value:
+                    value = value[key]
                 else:
                     return None
-            return val
+            return value
 
-        except client.exceptions.ApiException as api_err:
-            if api_err.status == 404:
+        except client.exceptions.ApiException as api_error:
+            if api_error.status == 404:
                 print(f"error: {kind}/{name} not found in {namespace}")
             else:
-                print(f"error: {utils.current_function()}: API error reading {kind}/{name}: {api_err}")
+                print(f"error: {utils.current_function()}: API error reading {kind}/{name}: {api_error}")
             return None
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to read {kind}/{name}: {e}")

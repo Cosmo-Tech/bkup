@@ -1,3 +1,4 @@
+import yaml
 import hashlib
 import importlib
 import pytest
@@ -185,38 +186,40 @@ def test_job_import_postgresql(orch, monkeypatch):
     assert job_cfg["TEMPLATE_PATH"] == "templates/postgresql.importer.job.yaml"
 
 
-def test_run_job_with_hooks(orch):
-    hooks = {
-        "pre": [
-            {
-                "apiVersion": "postgresql.cnpg.io/v1",
-                "kind": "Cluster",
-                "namespace": "harbor",
-                "name": "harbor-postgresql",
-                "patch": {"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}},
-            }
-        ],
-        "post": [
-            {
-                "apiVersion": "postgresql.cnpg.io/v1",
-                "kind": "Cluster",
-                "namespace": "harbor",
-                "name": "harbor-postgresql",
-                "patch": {"metadata": {"annotations": {"cnpg.io/hibernation": "on"}}},
-            }
-        ],
+def test_job_hook_enabled(orch, monkeypatch):
+    hooks_cfg = {
+        "enabled": True,
+        "rbac": {"rules": []},
+        "pre": {
+            "enabled": True,
+            "image": {
+                "repository": "alpine/k8s",
+                "tag": "1.31.2",
+                "pullPolicy": "IfNotPresent",
+                "pullSecrets": [{"name": "hook-regcred"}],
+            },
+            "command": ["/bin/sh", "-c"],
+            "args": ["echo pre-hook"],
+        },
+        "post": {
+            "enabled": False,
+        },
     }
+    monkeypatch.setenv("BKUP_HOOKS", yaml.safe_dump(hooks_cfg))
+    monkeypatch.setenv("BKUP_HOOKS_SERVICE_ACCOUNT_NAME", "bkup-hooks")
 
-    job_config = {
-        "JOB_NAMESPACE": "harbor",
-        "JOB_NAME": "bkup-psql-test",
-    }
+    with patch("src.orchestrator.os.path.exists", return_value=True):
+        orch.job_hook("pre")
+        orch.job_hook("post")  # Disabled -> should not trigger a job
 
-    orch.run_job(job_config=job_config, hooks=hooks)
-
-    assert orch.kube.patch_resource.call_count == 2
-    calls = orch.kube.patch_resource.call_args_list
-    assert calls[0].kwargs["patch"] == {"metadata": {"annotations": {"cnpg.io/hibernation": "off"}}}
-    assert calls[1].kwargs["patch"] == {"metadata": {"annotations": {"cnpg.io/hibernation": "on"}}}
-    orch.kube.create_job.assert_called_once_with(job_config=job_config)
-    orch.kube.wait_job_end.assert_called_once_with(namespace="harbor", job_name="bkup-psql-test")
+    orch.kube.create_job.assert_called_once()
+    job_cfg = orch.kube.create_job.call_args.kwargs["job_config"]
+    assert job_cfg["JOB_NAMESPACE"] == "bkup-system"
+    assert job_cfg["SERVICE_ACCOUNT_NAME"] == "bkup-hooks"
+    assert job_cfg["HOOK_IMAGE_REPOSITORY"] == "alpine/k8s"
+    assert job_cfg["HOOK_IMAGE_TAG"] == "1.31.2"
+    assert job_cfg["HOOK_COMMAND"] == ["/bin/sh", "-c"]
+    assert job_cfg["HOOK_ARGS"] == ["echo pre-hook"]
+    assert job_cfg["ALL_IMAGE_PULL_SECRETS"] == [{"name": "regcred"}, {"name": "hook-regcred"}]
+    orch.kube.duplicate_secret.assert_not_called()
+    orch.kube.wait_job_end.assert_called_once()

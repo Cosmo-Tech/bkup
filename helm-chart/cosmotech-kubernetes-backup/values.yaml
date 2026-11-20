@@ -143,41 +143,6 @@ backup:
         pullPolicy: ""
       # Namespace where to run the Kubernetes job
       namespace: ""
-      # Per-instance pre/post hooks (generic Kubernetes resource patches)
-      hooks:
-        # e.g:
-        # Hooks are designed to edit anything on resources before or after running the backups.
-        # For example it's useful to ensure a pod PostgreSQL pod is well-running (bkup jobs requires PostgreSQL to be available to use pg_dump)
-        # Example of pre & post hooks to save a Cloudnative-PG hibernation annotation, patch it & restore it (an autostop may have been setuped...)
-        # pre:
-        #   - action: copy_manifest_part
-        #     apiVersion: postgresql.cnpg.io/v1
-        #     kind: Cluster
-        #     namespace: mynamespace
-        #     name: mynamespace-postgresql
-        #     sourcePath: [metadata, annotations, cnpg.io/hibernation]
-        #     targetPath: [metadata, annotations, bkup/original-cnpg-hibernation]
-        #   - action: patch
-        #     apiVersion: postgresql.cnpg.io/v1
-        #     kind: Cluster
-        #     namespace: mynamespace
-        #     name: mynamespace-postgresql
-        #     patch:
-        #       metadata:
-        #         annotations:
-        #           cnpg.io/hibernation: "off"
-        #     waitSeconds: 20
-        pre: []
-        # e.g:
-        # post:
-        #   - action: copy_manifest_part
-        #     apiVersion: postgresql.cnpg.io/v1
-        #     kind: Cluster
-        #     namespace: mynamespace
-        #     name: mynamespace-postgresql
-        #     sourcePath: [metadata, annotations, bkup/original-cnpg-hibernation]
-        #     targetPath: [metadata, annotations, cnpg.io/hibernation]
-        post: []
 
   # Configure the job backup type for volumes
   # e.g:
@@ -190,33 +155,59 @@ backup:
     # Target specific namespaces to backup (if empty, all namespaces will be targetted)
     namespaces: []
 
-  # Global pre/post hooks (generic Kubernetes resource patches)
+  # Hooks allows to run custom jobs before/after backup jobs, with the exact images/commands you want
   hooks:
-    # e.g:
-    # pre:
-    #   - apiVersion: apps/v1
-    #     kind: Deployment
-    #     namespace: cnpg-system
-    #     name: cnpg-cloudnative-pg
-    #     patch:
-    #       spec:
-    #         replicas: 1
-    pre: []
-    # e.g:
-    # post:
-    #   - apiVersion: apps/v1
-    #     kind: Deployment
-    #     namespace: cnpg-system
-    #     name: cnpg-cloudnative-pg
-    #     patch:
-    #       spec:
-    #         replicas: 0
-    post: []
+    # When enabled, a dedicated ServiceAccount is created with empty ClusterRole permissions
+    # RBAC below allows to set minimal permissions according to your needs
+    enabled: true
+    rbac:
+      # e.g:
+      # - apiGroups: ["apps"]
+      #   resources: ["deployments", "deployments/scale"]
+      #   verbs: ["get", "patch"]
+      # - apiGroups: ["apps"]
+      #   resources: ["statefulsets", "statefulsets/scale"]
+      #   verbs: ["get", "patch"]
+      rules: []
 
-rbac:
-  # Optional extra RBAC rules required by custom hooks
-  extraRules: []
-  # e.g:
-  # - apiGroups: ["postgresql.cnpg.io"]
-  #   resources: ["clusters"]
-  #   verbs: ["get", "list", "patch"]
+    pre:
+      enabled: false
+      # e.g:
+      # image:
+      #   repository: "alpine/k8s"
+      #   tag: "latest"
+      #   pullPolicy: IfNotPresent
+      #   pullSecrets:
+      #     - name: example
+      # command: ["/bin/sh", "-c"]
+      # args:
+      #   - |
+      #     echo 'i am hook'
+      #     exit 0
+      image:
+        repository: ""
+        tag: ""
+        pullPolicy: IfNotPresent
+        pullSecrets: []
+      command: []
+      args: []
+    post:
+      enabled: false
+      # image:
+      #   repository: "alpine/k8s"
+      #   tag: "latest"
+      #   pullPolicy: IfNotPresent
+      #   pullSecrets:
+      #     - name: example
+      # command: ["/bin/sh", "-c"]
+      # args:
+      #   - |
+      #     echo 'i am hook'
+      #     exit 0
+      image:
+        repository: ""
+        tag: ""
+        pullPolicy: IfNotPresent
+        pullSecrets: []
+      command: []
+      args: []
