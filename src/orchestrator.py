@@ -135,7 +135,7 @@ def run_job(job_config: dict, manage_jit_secret: bool = True, workload_to_scale:
             delete_jit_secret(namespace=namespace)
 
 
-def job_hook(stage: str):
+def job_hook(hook_stage: str):
     """Run Kubernetes pre/post hook job"""
     try:
         raw_hooks = os.getenv("BKUP_HOOKS")
@@ -143,31 +143,31 @@ def job_hook(stage: str):
             return
 
         parsed = yaml.safe_load(raw_hooks)
-        if not isinstance(parsed, dict) or not parsed.get("enabled"):
+        if not isinstance(parsed, dict):
             return
 
-        hook_cfg = parsed.get(stage)
-        if not isinstance(hook_cfg, dict) or not hook_cfg.get("enabled"):
+        hook_config = parsed.get(hook_stage)
+        if not isinstance(hook_config, dict) or not hook_config.get("enabled"):
             return
 
         job_template_path = "templates/hook.job.yaml"
         if not os.path.exists(job_template_path):
             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
 
-        image_cfg = hook_cfg.get("image") or {}
-        hook_pull_secrets = image_cfg.get("pullSecrets") or []
+        hook_image = hook_config.get("image") or {}
+        hook_pull_secrets = hook_image.get("pullSecrets") or []
         all_image_pull_secrets = (bkup_image_pull_secrets or []) + hook_pull_secrets
 
-        job_name = f"bkup-hook-{stage}-{now_str}"
+        job_name = f"bkup-hook-{hook_stage}-{now_str}"
         service_account_name = os.getenv("BKUP_HOOKS_SERVICE_ACCOUNT_NAME")
 
         print("\n---------------------------------------------------------------------")
-        print(f"Kubernetes {stage}-hook job:")
+        print(f"Kubernetes {hook_stage}-hook job:")
         print(f"  datetime...........{now_str} ({now_formatted})")
         print(f"  job_namespace......{orchestrator_namespace}")
         print(f"  job_name...........{job_name}")
         print(f"  service_account....{service_account_name}")
-        print(f"  image..............{image_cfg.get('repository')}:{image_cfg.get('tag')}")
+        print(f"  image..............{hook_image.get('repository')}:{hook_image.get('tag')}")
         print("---------------------------------------------------------------------\n")
 
         job_config = job_config_common | {
@@ -175,12 +175,12 @@ def job_hook(stage: str):
             "JOB_NAMESPACE":          orchestrator_namespace,
             "TEMPLATE_PATH":          job_template_path,
             "SERVICE_ACCOUNT_NAME":   service_account_name,
-            "HOOK_IMAGE_REPOSITORY":  image_cfg.get("repository"),
-            "HOOK_IMAGE_TAG":         image_cfg.get("tag"),
-            "HOOK_IMAGE_PULL_POLICY": image_cfg.get("pullPolicy"),
+            "HOOK_IMAGE_REPOSITORY":  hook_image.get("repository"),
+            "HOOK_IMAGE_TAG":         hook_image.get("tag"),
+            "HOOK_IMAGE_PULL_POLICY": hook_image.get("pullPolicy"),
             "ALL_IMAGE_PULL_SECRETS": all_image_pull_secrets,
-            "HOOK_COMMAND":           hook_cfg.get("command"),
-            "HOOK_ARGS":              hook_cfg.get("args"),
+            "HOOK_COMMAND":           hook_config.get("command"),
+            "HOOK_ARGS":              hook_config.get("args"),
         }
 
         run_job(job_config=job_config, manage_jit_secret=False)
