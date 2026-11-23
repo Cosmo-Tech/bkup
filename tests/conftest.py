@@ -24,6 +24,7 @@ def clean_env(monkeypatch):
         "BKUP_ARCHIVE_NAME",
         "BKUP_MOUNT_PATH",
         "BKUP_JOB_NAMESPACE",
+        "BKUP_HOOKS",
     ]
     for var in bkup_vars:
         monkeypatch.delenv(var, raising=False)

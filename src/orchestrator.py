@@ -96,12 +96,106 @@ def delete_jit_secret(namespace: str):
         kube.delete_secret(namespace=namespace, secret_name=storage_password_secret_name)
 
 
+def run_job(job_config: dict, manage_jit_secret: bool = True, workload_to_scale: dict = None):
+    """Factorize jobs lifecycle"""
+
+    namespace = job_config["JOB_NAMESPACE"]
+    job_name = job_config["JOB_NAME"]
+
+    def abort_on_signal(signum, frame):
+        print(f"\n\ntermination signal ({signum}) received")
+
+        print(f"aborting job {job_name}...")
+        kube.delete_job(namespace=namespace, job_name=job_name)
+        kube.wait_job_end(namespace=namespace, job_name=job_name)
+
+        # sys.exit(1) raises SystemExit, which triggers the finally block below and the global finally block in cli.py
+        sys.exit(1)
+
+    signal.signal(signal.SIGTERM, abort_on_signal)
+    signal.signal(signal.SIGINT, abort_on_signal)
+
+    try:
+        if manage_jit_secret:
+            create_jit_secret(namespace=namespace)
+
+        # Scale down workload
+        if workload_to_scale is not None:
+            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_to_scale["kind"], workload_name=workload_to_scale["name"], replicas=0)
+
+        kube.create_job(job_config=job_config)
+        kube.wait_job_end(namespace=namespace, job_name=job_name)
+
+    finally:
+        # Scale up workload to its original replicas
+        if workload_to_scale is not None:
+            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_to_scale["kind"], workload_name=workload_to_scale["name"], replicas=workload_to_scale["replicas"])
+
+        if manage_jit_secret:
+            delete_jit_secret(namespace=namespace)
+
+
+def job_hook(hook_stage: str):
+    """Run Kubernetes pre/post hook job"""
+    try:
+        raw_hooks = os.getenv("BKUP_HOOKS")
+        if not raw_hooks:
+            return
+
+        parsed = yaml.safe_load(raw_hooks)
+        if not isinstance(parsed, dict):
+            return
+
+        hook_config = parsed.get(hook_stage)
+        if not isinstance(hook_config, dict) or not hook_config.get("enabled"):
+            return
+
+        job_template_path = "templates/hook.job.yaml"
+        if not os.path.exists(job_template_path):
+            raise FileNotFoundError(f"template path '{job_template_path}' not found.")
+
+        hook_image = hook_config.get("image") or {}
+        hook_pull_secrets = hook_image.get("pullSecrets") or []
+        all_image_pull_secrets = (bkup_image_pull_secrets or []) + hook_pull_secrets
+
+        job_name = f"bkup-hook-{hook_stage}-{now_str}"
+        service_account_name = os.getenv("BKUP_HOOKS_SERVICE_ACCOUNT_NAME")
+
+        print("\n---------------------------------------------------------------------")
+        print(f"Kubernetes {hook_stage}-hook job:")
+        print(f"  datetime...........{now_str} ({now_formatted})")
+        print(f"  job_namespace......{orchestrator_namespace}")
+        print(f"  job_name...........{job_name}")
+        print(f"  service_account....{service_account_name}")
+        print(f"  image..............{hook_image.get('repository')}:{hook_image.get('tag')}")
+        print("---------------------------------------------------------------------\n")
+
+        job_config = job_config_common | {
+            "JOB_NAME":               job_name,
+            "JOB_NAMESPACE":          orchestrator_namespace,
+            "TEMPLATE_PATH":          job_template_path,
+            "SERVICE_ACCOUNT_NAME":   service_account_name,
+            "HOOK_IMAGE_REPOSITORY":  hook_image.get("repository"),
+            "HOOK_IMAGE_TAG":         hook_image.get("tag"),
+            "HOOK_IMAGE_PULL_POLICY": hook_image.get("pullPolicy"),
+            "ALL_IMAGE_PULL_SECRETS": all_image_pull_secrets,
+            "HOOK_COMMAND":           hook_config.get("command"),
+            "HOOK_ARGS":              hook_config.get("args"),
+        }
+
+        run_job(job_config=job_config, manage_jit_secret=False)
+
+    except Exception as e:
+        print(f"error: {utils.current_function()}: {e}")
+        sys.exit(1)
+
+
 def job_export_volumes():
     """Run Kubernetes volumes backup job"""
     try:
         print("starting Kubernetes volumes backup jobs...")
 
-        job_template_path="templates/volume.exporter.job.yaml"
+        job_template_path = "templates/volume.exporter.job.yaml"
         if not os.path.exists(job_template_path):
             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
 
@@ -130,20 +224,20 @@ def job_export_volumes():
 
             create_jit_secret(namespace=n)
 
-            pvc_list = kube.list_pvc(namespace=n)
-            for p in pvc_list:
-                for w in workloads:
-                    mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
-                    for m in mounts:
-                        pvc                 = m.get("pvc")
-                        workload_kind       = m.get("workload_kind")
-                        workload_name       = m.get("workload_name")
-                        container           = m.get("container")
-                        volume              = m.get("volume")
-                        mount_path          = m.get("mount_path")
-                        original_replicas   = kube.get_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name)
+            try:
+                pvc_list = kube.list_pvc(namespace=n)
+                for p in pvc_list:
+                    for w in workloads:
+                        mounts = kube.map_mountpoints_pvc_workload(pvc_name=p, workload=w)
+                        for m in mounts:
+                            pvc                 = m.get("pvc")
+                            workload_kind       = m.get("workload_kind")
+                            workload_name       = m.get("workload_name")
+                            container           = m.get("container")
+                            volume              = m.get("volume")
+                            mount_path          = m.get("mount_path")
+                            original_replicas   = kube.get_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name)
 
-                        try :
                             job_name = f"{pvc}-{container}-{volume}"
                             job_name_hash = hashlib.md5(job_name.encode()).hexdigest()
                             # 63 char max for Kubernetes names
@@ -170,27 +264,10 @@ def job_export_volumes():
                             print(f"  archive_name.........{archive_name}")
                             print("---------------------------------------------------------------------\n")
 
-                            # Ensure replicas are restored in case of cancelled execution
-                            def abort_on_signal(signum, frame):
-                                print(f"\n\ntermination signal ({signum}) received")
-                                delete_jit_secret(namespace=n)
-
-                                print(f"aborting backup job {job_name_formatted} and restoring replicas of {workload_kind} {n}/{workload_name} to {original_replicas}...")
-                                kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
-                                kube.delete_job(namespace=n, job_name=job_name_formatted)
-                                kube.wait_job_end(namespace=n, job_name=job_name_formatted)
-
-                                sys.exit(1)
-                            signal.signal(signal.SIGTERM, abort_on_signal)
-                            signal.signal(signal.SIGINT, abort_on_signal)
-
                             # Add original replicas quantity to workload annotations
                             original_replicas_annotation = "bkup/original-replicas"
                             kube.add_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotations={original_replicas_annotation: str(original_replicas)})
                             original_replicas_from_annotation = kube.get_workload_annotation(namespace=n, workload_kind=workload_kind, workload_name=workload_name, annotation_key=original_replicas_annotation)
-
-                            # Scale down workload to be able claiming PVC
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
 
                             job_config_specific = {
                                 "JOB_NAME":         job_name_formatted,
@@ -203,17 +280,18 @@ def job_export_volumes():
                                 "PVC_NAME":         pvc,
                             }
                             job_config = job_config_common | job_config_specific
-                            kube.create_job(job_config=job_config)
 
-                            kube.wait_job_end(namespace=n, job_name=job_name_formatted)
-
-                            # Scale up workload to its original replicas quantity
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
-
-                        finally:
-                            kube.scale_workload_replicas(namespace=n, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
-
-            delete_jit_secret(namespace=n)
+                            run_job(
+                                job_config=job_config,
+                                manage_jit_secret=False,
+                                workload_to_scale={
+                                    "kind":     workload_kind,
+                                    "name":     workload_name,
+                                    "replicas": original_replicas_from_annotation,
+                                },
+                            )
+            finally:
+                delete_jit_secret(namespace=n)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -291,44 +369,28 @@ def job_import_volume(namespace: str, archive_name: str):
         print(f"  archive_name.........{archive_name}")
         print("---------------------------------------------------------------------\n")
 
-        create_jit_secret(namespace=namespace)
-
-        def abort_on_signal(signum, frame):
-            print(f"\n\ntermination signal ({signum}) received")
-            delete_jit_secret(namespace=namespace)
-            print(f"aborting import job {job_name_formatted} and restoring replicas of {workload_kind} {namespace}/{workload_name} to {original_replicas}...")
-            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas)
-            kube.delete_job(namespace=namespace, job_name=job_name_formatted)
-            kube.wait_job_end(namespace=namespace, job_name=job_name_formatted)
-            sys.exit(1)
-
-        signal.signal(signal.SIGTERM, abort_on_signal)
-        signal.signal(signal.SIGINT, abort_on_signal)
-
         original_replicas_annotation = "bkup/original-replicas"
         kube.add_workload_annotation(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, annotations={original_replicas_annotation: str(original_replicas)})
         original_replicas_from_annotation = kube.get_workload_annotation(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, annotation_key=original_replicas_annotation)
 
-        try:
-            # Scale down workload to release the PVC
-            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=0)
+        job_config_specific = {
+            "JOB_NAME":         job_name_formatted,
+            "JOB_NAMESPACE":    namespace,
+            "TEMPLATE_PATH":    job_template_path,
+            "ARCHIVE_NAME":     archive_name,
+            "MOUNT_PATH":       mount_path,
+            "PVC_NAME":         pvc,
+        }
+        job_config = job_config_common | job_config_specific
 
-            job_config_specific = {
-                "JOB_NAME":         job_name_formatted,
-                "JOB_NAMESPACE":    namespace,
-                "TEMPLATE_PATH":    job_template_path,
-                "ARCHIVE_NAME":     archive_name,
-                "MOUNT_PATH":       mount_path,
-                "PVC_NAME":         pvc,
-            }
-            job_config = job_config_common | job_config_specific
-            kube.create_job(job_config=job_config)
-            kube.wait_job_end(namespace=namespace, job_name=job_name_formatted)
-
-        finally:
-            # Always restore original replicas and clean up the JIT secret
-            kube.scale_workload_replicas(namespace=namespace, workload_kind=workload_kind, workload_name=workload_name, replicas=original_replicas_from_annotation)
-            delete_jit_secret(namespace=namespace)
+        run_job(
+            job_config=job_config,
+            workload_to_scale={
+                "kind":     workload_kind,
+                "name":     workload_name,
+                "replicas": original_replicas_from_annotation,
+            },
+        )
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
@@ -340,7 +402,7 @@ def job_export_postgresql():
     try:
         print("starting PostgreSQL backup jobs...")
 
-        job_template_path="templates/postgresql.exporter.job.yaml"
+        job_template_path = "templates/postgresql.exporter.job.yaml"
         if not os.path.exists(job_template_path):
             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
 
@@ -349,7 +411,6 @@ def job_export_postgresql():
         if not postgresql_values:
             print("error: missing export BKUP_POSTGRESQL_VALUES")
 
-        # postgresql_configs = yaml.safe_load(postgresql_values).get("postgresql")
         postgresql_configs = yaml.safe_load(postgresql_values)
 
         for p in postgresql_configs:
@@ -399,21 +460,6 @@ def job_export_postgresql():
             print(f"  archive_name.......................{archive_name} (psql_{postgresql_host}_{now_str})")
             print("---------------------------------------------------------------------\n")
 
-            # Ensure replicas are restored in case of cancelled execution
-            def abort_on_signal(signum, frame):
-                print(f"\n\ntermination signal ({signum}) received")
-                delete_jit_secret(namespace=job_namespace)
-
-                print(f"aborting backup job {job_name_formatted}...")
-                kube.delete_job(namespace=job_namespace, job_name=job_name_formatted)
-                kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
-
-                sys.exit(1)
-            signal.signal(signal.SIGTERM, abort_on_signal)
-            signal.signal(signal.SIGINT, abort_on_signal)
-
-            create_jit_secret(namespace=job_namespace)
-
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
                 "JOB_NAMESPACE":                    job_namespace,
@@ -438,16 +484,12 @@ def job_export_postgresql():
                 "POSTGRESQL_PASSWORD_SECRET_KEY":   postgresql_password_secret_key,
             }
             job_config = job_config_common | job_config_specific
-            kube.create_job(job_config=job_config)
 
-            kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
-
-            delete_jit_secret(namespace=job_namespace)
+            run_job(job_config=job_config)
 
     except Exception as e:
         print(f"error: {utils.current_function()}: {e}")
         sys.exit(1)
-
 
 
 def job_import_postgresql(archive_name: str):
@@ -455,7 +497,7 @@ def job_import_postgresql(archive_name: str):
     try:
         print("starting PostgreSQL restore jobs...")
 
-        job_template_path="templates/postgresql.importer.job.yaml"
+        job_template_path = "templates/postgresql.importer.job.yaml"
         if not os.path.exists(job_template_path):
             raise FileNotFoundError(f"template path '{job_template_path}' not found.")
 
@@ -531,21 +573,6 @@ def job_import_postgresql(archive_name: str):
             print(f"  archive_name.......................{archive_name}")
             print("---------------------------------------------------------------------\n")
 
-            # Ensure replicas are restored in case of cancelled execution
-            def abort_on_signal(signum, frame):
-                print(f"\n\ntermination signal ({signum}) received")
-                delete_jit_secret(namespace=job_namespace)
-
-                print(f"aborting backup job {job_name_formatted}...")
-                kube.delete_job(namespace=job_namespace, job_name=job_name_formatted)
-                kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
-
-                sys.exit(1)
-            signal.signal(signal.SIGTERM, abort_on_signal)
-            signal.signal(signal.SIGINT, abort_on_signal)
-
-            create_jit_secret(namespace=job_namespace)
-
             job_config_specific = {
                 "JOB_NAME":                         job_name_formatted,
                 "JOB_NAMESPACE":                    job_namespace,
@@ -570,11 +597,8 @@ def job_import_postgresql(archive_name: str):
                 "POSTGRESQL_PASSWORD_SECRET_KEY":   postgresql_password_secret_key,
             }
             job_config = job_config_common | job_config_specific
-            kube.create_job(job_config=job_config)
 
-            kube.wait_job_end(namespace=job_namespace, job_name=job_name_formatted)
-
-            delete_jit_secret(namespace=job_namespace)
+            run_job(job_config=job_config)
 
             break
 
