@@ -10,7 +10,7 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 86400
-  ttlSecondsAfterFinished: 3600
+  ttlSecondsAfterFinished: 86400
   template:
     spec:
       restartPolicy: Never
@@ -93,6 +93,13 @@ spec:
               }
               set_signal 'starting'
 
+              # Usage: fail <log_message>
+              fail() {
+                echo "$1"
+                set_signal "failed"
+                exit 1
+              }
+
 
               # ------------------------------------------------------
               # Pipe is used to stream data from the importer
@@ -104,8 +111,7 @@ spec:
               if [ -p "$pipe" ]; then
                 echo "successfully created UNIX pipe at $pipe"
               else
-                echo 'error: UNIX pipe not created, cannot synchronize with the importer container'
-                exit 1
+                fail 'error: UNIX pipe not created, cannot synchronize with the importer container'
               fi
 
 
@@ -113,23 +119,19 @@ spec:
               # Retrieve databases informations & test access
               # ------------------------------------------------------
               if [ -z "$PGHOST" ]; then
-                echo "error: PGHOST environment variable is missing."
-                exit 1
+                fail "error: PGHOST environment variable is missing."
               fi
 
               if [ -z "$PGPORT" ]; then
-                echo "error: PGPORT environment variable is missing."
-                exit 1
+                fail "error: PGPORT environment variable is missing."
               fi
 
               if [ -z "$PGUSER" ]; then
-                echo "error: PGUSER environment variable is missing."
-                exit 1
+                fail "error: PGUSER environment variable is missing."
               fi
 
               if [ -z "$PGPASSWORD" ]; then
-                echo "error: PGPASSWORD environment variable is missing."
-                exit 1
+                fail "error: PGPASSWORD environment variable is missing."
               fi
 
               # If PGPASSWORD points to a mounted secret file, read file content
@@ -146,8 +148,7 @@ spec:
 
               # For restoration, we strictly require the user to explicitly define the database(s)
               if [ -z "$PGDATABASE" ] || [ "$PGDATABASE" = 'None' ]; then
-                echo "error: PGDATABASE environment variable is missing. You must explicitly set the database(s) to restore."
-                exit 1
+                fail "error: PGDATABASE environment variable is missing. You must explicitly set the database(s) to restore."
               fi
               
               db_list=$PGDATABASE
@@ -167,8 +168,7 @@ spec:
                 psql_exit=$?
                 
                 if [ $psql_exit -ne 0 ]; then
-                  echo "error: psql failed with exit code $psql_exit for database '$db'. Rollback applied."
-                  exit 1
+                  fail "error: psql failed with exit code $psql_exit for database '$db'. Rollback applied."
                 fi
 
                 until [ "$(get_signal)" = "done:$db" ]; do
