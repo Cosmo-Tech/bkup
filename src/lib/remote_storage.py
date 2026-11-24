@@ -121,6 +121,9 @@ class RemoteStorage:
                         print('all dumps have been successfully exported.')
                         break
 
+                    if signal == "failed":
+                        raise RuntimeError("sidecar container failed, aborting.")
+
                     if signal.startswith("dumping:"):
                         dump_target = signal.split(":", 1)[1]
 
@@ -192,6 +195,9 @@ class RemoteStorage:
                     if signal == "finished":
                         print('all backups have been successfully restored.')
                         break
+
+                    if signal == "failed":
+                        raise RuntimeError("sidecar container failed, aborting.")
 
                     if signal.startswith("restoring:"):
                         restore_target = signal.split(":", 1)[1]

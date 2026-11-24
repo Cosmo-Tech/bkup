@@ -10,7 +10,7 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 86400
-  ttlSecondsAfterFinished: 3600
+  ttlSecondsAfterFinished: 86400
   template:
     spec:
       restartPolicy: Never
@@ -93,6 +93,13 @@ spec:
               }
               set_signal 'starting'
 
+              # Usage: fail <log_message>
+              fail() {
+                echo "$1"
+                set_signal "failed"
+                exit 1
+              }
+
 
               # ------------------------------------------------------
               # Pipe is used to stream data to the exporter
@@ -104,8 +111,7 @@ spec:
               if [ -p "$pipe" ]; then
                 echo "successfully created UNIX pipe at $pipe"
               else
-                echo 'error: UNIX pipe not created, cannot synchronize with the exporter container'
-                exit 1
+                fail 'error: UNIX pipe not created, cannot synchronize with the exporter container'
               fi
 
 
@@ -113,23 +119,19 @@ spec:
               # Retrieve databases informations & test access
               # ------------------------------------------------------
               if [ -z "$PGHOST" ]; then
-                echo "error: PGHOST environment variable is missing."
-                exit 1
+                fail "error: PGHOST environment variable is missing."
               fi
 
               if [ -z "$PGPORT" ]; then
-                echo "error: PGPORT environment variable is missing."
-                exit 1
+                fail "error: PGPORT environment variable is missing."
               fi
 
               if [ -z "$PGUSER" ]; then
-                echo "error: PGUSER environment variable is missing."
-                exit 1
+                fail "error: PGUSER environment variable is missing."
               fi
 
               if [ -z "$PGPASSWORD" ]; then
-                echo "error: PGPASSWORD environment variable is missing."
-                exit 1
+                fail "error: PGPASSWORD environment variable is missing."
               fi
 
               # If PGPASSWORD points to a mounted secret file, read file content
@@ -149,16 +151,24 @@ spec:
                 # Ensure not falling in 'FATAL: database "None" does not exist'
                 unset PGDATABASE
 
+                # Use default databases just to be able listing all databases
+                for default_db in postgres template1; do
+                  db_list_tmp=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$default_db" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datallowconn = true AND has_database_privilege(current_user, datname, 'CONNECT')" 2>/dev/null)
+                  if [ -n "$db_list_tmp" ]; then
+                    break
+                  fi
+                done
+
                 # Default is all databases
-                db_list=$(psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false" 2>/dev/null)
+                db_list=$db_list_tmp
+
               else
                 # User-defined database
                 db_list=$PGDATABASE
               fi
 
               if [ -z "$db_list" ]; then
-                echo "error: no database found"
-                exit 1
+                fail "error: no database found"
               fi
 
 
@@ -175,8 +185,7 @@ spec:
                 pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$db" --clean --if-exists > "$pipe"
                 psql_exit=$?
                 if [ $psql_exit -ne 0 ]; then
-                  echo "error: pg_dump failed with exit code $psql_exit for database '$db'"
-                  exit 1
+                  fail "error: pg_dump failed with exit code $psql_exit for database '$db'"
                 fi
 
                 until [ "$(get_signal)" = "done:$db" ]; do
