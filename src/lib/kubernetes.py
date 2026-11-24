@@ -176,13 +176,13 @@ class Kubernetes:
             return None
 
 
-    def wait_job_end(self, namespace: str, job_name: str) -> bool:
+    def wait_job_end(self, namespace: str, job_name: str, timeout: int = 86400) -> bool:
         """Wait for a job to end"""
-        print(f"waiting end of job {job_name}...")
+        print(f"waiting end of job {job_name} (timeout: {timeout}s)...")
 
         try:
             start_time = time.time()
-            while time.time() - start_time < 600:
+            while time.time() - start_time < timeout:
                 try:
                     self.batch_v1.read_namespaced_job(namespace=namespace, name=job_name)
                     status = self.get_job_status(namespace=namespace, job_name=job_name)
@@ -204,6 +204,10 @@ class Kubernetes:
                         raise
 
                 time.sleep(3)
+
+            print(f"error: timeout ({timeout}s) reached while waiting for job {namespace}/{job_name}")
+            return False
+
         except Exception as e:
             print(f"error: {utils.current_function()}: failed to wait for end of job {job_name}: {e}")
             return False
