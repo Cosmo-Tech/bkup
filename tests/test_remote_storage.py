@@ -34,12 +34,22 @@ def test_remote_storage_init_with_password_env(mock_kube_cls, base_env):
 
 @patch("src.lib.remote_storage.Kubernetes")
 def test_remote_storage_custom_transfer_settings(mock_kube_cls, base_env, monkeypatch):
-    monkeypatch.setenv("BKUP_BLOCK_SIZE", str(32 * 1024 * 1024))
+    monkeypatch.setenv("BKUP_BLOCK_SIZE_MIB", "32")
     monkeypatch.setenv("BKUP_COMPRESS_LEVEL", "0")
 
     rs = RemoteStorage()
+    assert rs.block_size_mib == 32
     assert rs.block_size == 32 * 1024 * 1024
     assert rs.compress_level == 0
+
+
+@patch("src.lib.remote_storage.Kubernetes")
+@pytest.mark.parametrize("bad_val", ["0", "-6151"])
+def test_remote_storage_invalid_block_size_raises(mock_kube_cls, base_env, monkeypatch, bad_val):
+    monkeypatch.setenv("BKUP_BLOCK_SIZE_MIB", bad_val)
+
+    with pytest.raises(ValueError, match="BKUP_BLOCK_SIZE_MIB"):
+        RemoteStorage()
 
 
 def test_create_progress_logger(capsys):

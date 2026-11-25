@@ -25,7 +25,7 @@ def clean_env(monkeypatch):
         "BKUP_MOUNT_PATH",
         "BKUP_JOB_NAMESPACE",
         "BKUP_HOOKS",
-        "BKUP_BLOCK_SIZE",
+        "BKUP_BLOCK_SIZE_MIB",
         "BKUP_COMPRESS_LEVEL",
     ]
     for var in bkup_vars:
