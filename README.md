@@ -52,9 +52,9 @@ command                     | usage
 `-h/--help`                 | Display help usage of the main command
 `-c/--kube-context <>`      | Specify the Kube context to use (if empty, current context is used)
 `-i/--instance <>`          | Load configuration from a bkup instance on the Kubernetes cluster (useful in case of existing multiple installations on the cluster)
-`export`                    | Entrypoint of the cronjob. :warning: Cannot be used directly on your computer
+`export`                    | Run orchestrated export Kubernetes jobs. If no argument is passed, a selectable menu will guide you through the steps. Also entrypoint of the cronjob
 `export --help`             | Display help usage of the `export` command
-`import`                    | Run import (= restore) Kubernetes jobs. If no argument is passed, a selectable menu will guide you through the import steps
+`import`                    | Run import (= restore) Kubernetes jobs. If no argument is passed, a selectable menu will guide you through the steps
 `import --help`             | Display help usage of the `import` command
 `import -f/--file`          | Specify a backup file to import from remote storage
 `import -n/--namespace`     | Specify a namespace where to run the backup import job
