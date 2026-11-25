@@ -106,7 +106,8 @@ class RemoteStorage:
         print("")
 
 
-    def create_progress_logger(action: str = "processed", interval_sec: int = 30):
+    @staticmethod
+    def progress_logger(action: str = "processed", interval_sec: int = 30):
         """Track data transfer progression"""
         total_bytes = 0
         start_time = last_log = time.time()
@@ -165,7 +166,7 @@ class RemoteStorage:
                         address = f"{self.address_prefix}/{archive_name}"
                         print(f"dumping '{archive_name}' to {address}")
 
-                        track_progress = self.create_progress_logger(action="dumped", interval_sec=10)
+                        track_progress = self.progress_logger(action="dumped", interval_sec=10)
 
                         # Open fsspec stream enable to write binaries
                         with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
@@ -189,7 +190,7 @@ class RemoteStorage:
                 address = f"{self.address_prefix}/{archive_name}"
                 print(f"dumping '{archive_name}' to {address}")
 
-                track_progress = self.create_progress_logger(action="archived", interval_sec=10)
+                track_progress = self.progress_logger(action="archived", interval_sec=10)
 
                 # Open fsspec stream enable to write binaries (which is required for tar)
                 with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
@@ -236,7 +237,7 @@ class RemoteStorage:
 
                     if signal.startswith("restoring:"):
                         restore_target = signal.split(":", 1)[1]
-                        track_progress = self.create_progress_logger(action="restored", interval_sec=10)
+                        track_progress = self.progress_logger(action="restored", interval_sec=10)
 
                         # Open fsspec stream to read remote backup
                         with fsspec.open(address, "rb", block_size=self.block_size, **self.storage_options) as remote_stream:
@@ -257,7 +258,7 @@ class RemoteStorage:
 
             # If pipe_file doesn't exist (=> volume restore)
             else:
-                track_progress = self.create_progress_logger(action="restored", interval_sec=10)
+                track_progress = self.progress_logger(action="restored", interval_sec=10)
 
                 # Just a function to aggregate logs in the single "filter" argument of tar
                 def restore_filter(member: tarfile.TarInfo, dest_path: str):

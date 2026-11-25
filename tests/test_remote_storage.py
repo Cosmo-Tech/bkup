@@ -43,7 +43,7 @@ def test_remote_storage_custom_transfer_settings(mock_kube_cls, base_env, monkey
 
 
 def test_create_progress_logger(capsys):
-    tracker = RemoteStorage.create_progress_logger(action="archived", interval_sec=0)
+    tracker = RemoteStorage.progress_logger(action="archived", interval_sec=0)
 
     # Test with raw byte count
     assert tracker(1024 * 1024) == 1024 * 1024
