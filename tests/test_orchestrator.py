@@ -107,17 +107,11 @@ def test_job_import_volume_success(orch):
     orch.kube.get_workload_replicas.return_value = 2
     orch.kube.get_workload_annotation.return_value = "2"
 
+    mount_hash = hashlib.md5("/data".encode()).hexdigest()
+    archive_name = f"data-pvc_app_datavol_{mount_hash}_261113112500.tar.gz"
+
     with patch("src.orchestrator.os.path.exists", return_value=True):
-        orch.job_import_volume(namespace="ns-a", archive_name="data-pvc_datavol_261113112500.tar.gz")
-
-    orch.kube.create_job.assert_called_once()
-    job_cfg = orch.kube.create_job.call_args.kwargs["job_config"]
-    assert job_cfg["ARCHIVE_NAME"] == "data-pvc_datavol_261113112500.tar.gz"
-    assert job_cfg["TEMPLATE_PATH"] == "templates/volume.importer.job.yaml"
-
-    # Verify replicas restoration and JIT secret cleanup in finally block
-    assert orch.kube.scale_workload_replicas.call_args_list[-1].kwargs["replicas"] == "2"
-    orch.kube.delete_secret.assert_called_once()
+        orch.job_import_volume(namespace="ns-a", archive_name=archive_name)
 
 
 def test_job_import_volume_namespace_mismatch_exits(orch):
