@@ -14,13 +14,20 @@ class RemoteStorage:
         self.endpoint                       = os.getenv('BKUP_STORAGE_ENDPOINT')
         self.root                           = os.getenv('BKUP_STORAGE_ROOT')
         self.username                       = os.getenv('BKUP_STORAGE_USERNAME')
-        # self.password                     = os.getenv('BKUP_STORAGE_PASSWORD')
         self.storage_password_secret_name   = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
         self.storage_password_secret_key    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
         self.archive_name_prefix            = os.getenv('BKUP_ARCHIVE_NAME')
         self.mount_path                     = os.getenv('BKUP_MOUNT_PATH')
         self.job_namespace                  = os.getenv('BKUP_JOB_NAMESPACE')
         self.orchestrator_namespace         = os.getenv('BKUP_ORCHESTRATOR_NAMESPACE')
+
+        self.block_size_mib                 = int(os.getenv("BKUP_BLOCK_SIZE_MIB", 16))
+        if self.block_size_mib <= 0:
+            raise ValueError(f"BKUP_BLOCK_SIZE_MIB must be a positive integer, got {self.block_size_mib}")
+        self.block_size                     = self.block_size_mib * 1024 * 1024
+
+        self.compress_level                 = int(os.getenv("BKUP_COMPRESS_LEVEL", 1)) # GZIP compression level: 1=fast, 9=max
+
 
         # Universal URL working with all drivers (waits for an additional path like f"{protocol}://{root}/{job_namespace}/{additional_path}")
         if self.job_namespace:
@@ -90,12 +97,41 @@ class RemoteStorage:
             print(f"address_prefix.........{self.address_prefix}")
 
         if self.storage_options:
-            print(f"storage_options........{str(self.storage_options).replace(self.password, '*********') }")
+            print(f"storage_options........{str(self.storage_options).replace(self.password, '*********')}")
 
         if self.endpoint:
             print(f"endpoint...............{self.endpoint}")
 
+        if self.block_size:
+            print(f"block_size.............{self.block_size} bytes")
+
+        if self.compress_level:
+            print(f"compress_level....{self.compress_level}")
+
         print("")
+
+
+    @staticmethod
+    def progress_logger(action: str = "processed", interval_sec: int = 30):
+        """Track data transfer progression"""
+        total_bytes = 0
+        start_time = last_log = time.time()
+
+        def log_progress(item):
+            nonlocal total_bytes, last_log
+            size = item.size if isinstance(item, tarfile.TarInfo) else item
+            total_bytes += size
+
+            current_time = time.time()
+            if current_time - last_log >= interval_sec:
+                gib = total_bytes / (1024 ** 3)
+                mb_s = (total_bytes / (1024 ** 2)) / max(current_time - start_time, 0.001)
+                print(f"progress: {gib:.2f} GiB {action} ({mb_s:.1f} MB/s)...")
+                last_log = current_time
+
+            return item
+
+        return log_progress
 
 
     def remote_stream_exporter(self):
@@ -135,13 +171,15 @@ class RemoteStorage:
                         address = f"{self.address_prefix}/{archive_name}"
                         print(f"dumping '{archive_name}' to {address}")
 
-                        # Open fsspec stream enable to read binaries
-                        with fsspec.open(address, "wb", **self.storage_options) as remote_stream:
-                            with gzip.GzipFile(fileobj=remote_stream, mode="wb") as gz:
-                                # Read data blocs of 1MB
+                        track_progress = self.progress_logger(action="dumped", interval_sec=10)
+
+                        # Open fsspec stream enable to write binaries
+                        with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
+                            with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.compress_level) as gz:
                                 with open(self.pipe_file, "rb") as pipe:
-                                    while chunk := pipe.read(1024 * 1024):
+                                    while chunk := pipe.read(self.block_size):
                                         gz.write(chunk)
+                                        track_progress(len(chunk))
 
                         # Sending "done" signal
                         with open(self.signal_file, "w") as f:
@@ -157,13 +195,16 @@ class RemoteStorage:
                 address = f"{self.address_prefix}/{archive_name}"
                 print(f"dumping '{archive_name}' to {address}")
 
-                # Open fsspec stream enable to read binaries (which is required for tar)
-                with fsspec.open(address, "wb", **self.storage_options) as remote_stream:
-                    with tarfile.open(fileobj=remote_stream, mode="w|gz") as tar:
-                        for item in os.listdir(self.mount_path):
-                            # Ensure mount_path structure is kept in the archive
-                            full_path = os.path.join(self.mount_path, item)
-                            tar.add(full_path, arcname=item)
+                track_progress = self.progress_logger(action="archived", interval_sec=10)
+
+                # Open fsspec stream enable to write binaries (which is required for tar)
+                with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
+                    with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.compress_level) as gz:
+                        with tarfile.open(fileobj=gz, mode="w", copybufsize=self.block_size) as tar:
+                            for item in os.listdir(self.mount_path):
+                                # Ensure mount_path structure is kept in the archive
+                                full_path = os.path.join(self.mount_path, item)
+                                tar.add(full_path, arcname=item, filter=track_progress)
 
             print("\nbackup completed successfully")
 
@@ -201,15 +242,16 @@ class RemoteStorage:
 
                     if signal.startswith("restoring:"):
                         restore_target = signal.split(":", 1)[1]
+                        track_progress = self.progress_logger(action="restored", interval_sec=10)
 
                         # Open fsspec stream to read remote backup
-                        with fsspec.open(address, "rb", **self.storage_options) as remote_stream:
+                        with fsspec.open(address, "rb", block_size=self.block_size, **self.storage_options) as remote_stream:
                             with gzip.GzipFile(fileobj=remote_stream, mode="rb") as gz:
-                                # Write data blocks of 1MB to the pipe
                                 with open(self.pipe_file, "wb") as pipe:
                                     try:
-                                        while chunk := gz.read(1024 * 1024):
+                                        while chunk := gz.read(self.block_size):
                                             pipe.write(chunk)
+                                            track_progress(len(chunk))
                                     except BrokenPipeError:
                                       print(f"warning: broken pipe detected while restoring {restore_target}. The sidecar container probably aborted the restoration.")
 
@@ -221,10 +263,17 @@ class RemoteStorage:
 
             # If pipe_file doesn't exist (=> volume restore)
             else:
+                track_progress = self.progress_logger(action="restored", interval_sec=10)
+
+                # Just a function to aggregate logs in the single "filter" argument of tar
+                def restore_filter(member: tarfile.TarInfo, dest_path: str):
+                    filtered = tarfile.data_filter(member, dest_path)
+                    return track_progress(filtered) if filtered is not None else None
+
                 # Open fsspec stream to read remote tar.gz
-                with fsspec.open(address, "rb", **self.storage_options) as remote_stream:
-                    with tarfile.open(fileobj=remote_stream, mode="r|gz") as tar:
-                        tar.extractall(path=self.mount_path, filter='data')
+                with fsspec.open(address, "rb", block_size=self.block_size, **self.storage_options) as remote_stream:
+                    with tarfile.open(fileobj=remote_stream, mode="r|gz", copybufsize=self.block_size) as tar:
+                        tar.extractall(path=self.mount_path, filter=restore_filter)
 
             print("\nrestore completed successfully")
 

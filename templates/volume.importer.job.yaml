@@ -6,7 +6,7 @@ metadata:
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 86400
-  ttlSecondsAfterFinished: 3600
+  ttlSecondsAfterFinished: 86400
   template:
     spec:
       restartPolicy: Never
@@ -23,8 +23,8 @@ spec:
               cpu: "250m"
               memory: "128Mi"
             limits:
-              cpu: "1000m"
-              memory: "512Mi"
+              cpu: "2"
+              memory: "2Gi"
           volumeMounts:
             - name: volume-to-import
               mountPath: "{{ MOUNT_PATH }}"
@@ -51,6 +51,10 @@ spec:
               value: "{{ MOUNT_PATH }}"
             - name: BKUP_JOB_NAMESPACE
               value: "{{ JOB_NAMESPACE }}"
+            - name: BKUP_BLOCK_SIZE_MIB
+              value: "{{ BKUP_BLOCK_SIZE_MIB }}"
+            - name: BKUP_COMPRESS_LEVEL
+              value: "{{ BKUP_COMPRESS_LEVEL }}"
 
       volumes:
         - name: volume-to-import
