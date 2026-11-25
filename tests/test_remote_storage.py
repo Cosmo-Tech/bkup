@@ -24,10 +24,38 @@ def test_remote_storage_init_with_password_env(mock_kube_cls, base_env):
     rs = RemoteStorage()
     assert rs.address_prefix == "s3://my-bucket/app-ns"
     assert rs.password == "miniopass"
+    assert rs.block_size == 16 * 1024 * 1024
+    assert rs.compress_level == 1
     assert rs.storage_options["key"] == "minioadmin"
     assert rs.storage_options["secret"] == "miniopass"
     assert rs.storage_options["client_kwargs"] == {"endpoint_url": "https://minio.local"}
     mock_kube_cls.return_value.get_secret_value.assert_not_called()
+
+
+@patch("src.lib.remote_storage.Kubernetes")
+def test_remote_storage_custom_transfer_settings(mock_kube_cls, base_env, monkeypatch):
+    monkeypatch.setenv("BKUP_BLOCK_SIZE", str(32 * 1024 * 1024))
+    monkeypatch.setenv("BKUP_COMPRESS_LEVEL", "0")
+
+    rs = RemoteStorage()
+    assert rs.block_size == 32 * 1024 * 1024
+    assert rs.compress_level == 0
+
+
+def test_create_progress_logger(capsys):
+    tracker = RemoteStorage.create_progress_logger(action="archived", interval_sec=0)
+
+    # Test with raw byte count
+    assert tracker(1024 * 1024) == 1024 * 1024
+
+    # Test with TarInfo object
+    info = tarfile.TarInfo(name="blob.bin")
+    info.size = 2 * 1024 * 1024
+    assert tracker(info) is info
+
+    captured = capsys.readouterr().out
+    assert "progress:" in captured
+    assert "archived" in captured
 
 
 @patch("src.lib.remote_storage.Kubernetes")
@@ -68,6 +96,7 @@ def test_remote_stream_exporter_volume(mock_fsspec_open, mock_kube_cls, base_env
     mock_fsspec_open.assert_called_once_with(
         "s3://my-bucket/app-ns/pvc_vol_261113112500.tar.gz",
         "wb",
+        block_size=rs.block_size,
         **rs.storage_options,
     )
 
@@ -127,6 +156,7 @@ def test_remote_stream_exporter_pipe(mock_sleep, mock_fsspec_open, mock_kube_cls
     mock_fsspec_open.assert_called_once_with(
         "s3://my-bucket/app-ns/pvc_vol_261113112500_mydb.gz",
         "wb",
+        block_size=rs.block_size,
         **rs.storage_options,
     )
     assert gzip.decompress(buffer.getvalue()) == b"CREATE TABLE test (id INT);"
@@ -150,6 +180,13 @@ def test_remote_stream_importer_volume(mock_fsspec_open, mock_kube_cls, base_env
 
     rs = RemoteStorage()
     rs.remote_stream_importer(archive_name="pvc_vol_261113112500.tar.gz")
+
+    mock_fsspec_open.assert_called_once_with(
+        "s3://my-bucket/app-ns/pvc_vol_261113112500.tar.gz",
+        "rb",
+        block_size=rs.block_size,
+        **rs.storage_options,
+    )
 
     restored_file = base_env / "restored.txt"
     assert restored_file.exists()
