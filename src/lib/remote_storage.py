@@ -106,7 +106,7 @@ class RemoteStorage:
             print(f"block_size.............{self.block_size} bytes")
 
         if self.compress_level:
-            print(f"compress_level....{self.compress_level}")
+            print(f"compress_level.........{self.compress_level}")
 
         print("")
 
