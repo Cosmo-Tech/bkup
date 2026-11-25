@@ -2,6 +2,7 @@ import sys
 import os
 import stat
 import time
+import hashlib
 from datetime import datetime
 
 
@@ -30,3 +31,10 @@ def wait_for_pipe(mount_path: str):
         time.sleep(timer)
         timer += 1
         print(f"waiting for sidecar UNIX pipe at {pipe_path}... {timer}")
+
+
+def sanitize_path(path: str) -> str:
+    """Sanitize path string"""
+    if not path:
+        return ""
+    return hashlib.md5(path.encode()).hexdigest()
