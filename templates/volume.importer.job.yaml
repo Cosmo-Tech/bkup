@@ -51,6 +51,10 @@ spec:
               value: "{{ MOUNT_PATH }}"
             - name: BKUP_JOB_NAMESPACE
               value: "{{ JOB_NAMESPACE }}"
+            - name: BKUP_BLOCK_SIZE_MIB
+              value: "{{ BKUP_BLOCK_SIZE_MIB }}"
+            - name: BKUP_GZIP_COMPRESS_LEVEL
+              value: "{{ BKUP_GZIP_COMPRESS_LEVEL }}"
 
       volumes:
         - name: volume-to-import
