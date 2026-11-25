@@ -29,8 +29,8 @@ spec:
               cpu: "250m"
               memory: "128Mi"
             limits:
-              cpu: "1000m"
-              memory: "512Mi"
+              cpu: "2"
+              memory: "2Gi"
           volumeMounts:
             - name: shared
               mountPath: "{{ MOUNT_PATH }}"
