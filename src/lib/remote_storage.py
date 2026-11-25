@@ -26,7 +26,7 @@ class RemoteStorage:
             raise ValueError(f"BKUP_BLOCK_SIZE_MIB must be a positive integer, got {self.block_size_mib}")
         self.block_size                     = self.block_size_mib * 1024 * 1024
 
-        self.gzip_compress_level            = int(os.getenv("BKUP_GZIP_COMPRESS_LEVEL", 1)) # 1=fast, 9=max
+        self.compress_level                 = int(os.getenv("BKUP_COMPRESS_LEVEL", 1)) # GZIP compression level: 1=fast, 9=max
 
 
         # Universal URL working with all drivers (waits for an additional path like f"{protocol}://{root}/{job_namespace}/{additional_path}")
@@ -105,8 +105,8 @@ class RemoteStorage:
         if self.block_size:
             print(f"block_size.............{self.block_size} bytes")
 
-        if self.gzip_compress_level:
-            print(f"gzip_compress_level....{self.gzip_compress_level}")
+        if self.compress_level:
+            print(f"compress_level....{self.compress_level}")
 
         print("")
 
@@ -175,7 +175,7 @@ class RemoteStorage:
 
                         # Open fsspec stream enable to write binaries
                         with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
-                            with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.gzip_compress_level) as gz:
+                            with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.compress_level) as gz:
                                 with open(self.pipe_file, "rb") as pipe:
                                     while chunk := pipe.read(self.block_size):
                                         gz.write(chunk)
@@ -199,7 +199,7 @@ class RemoteStorage:
 
                 # Open fsspec stream enable to write binaries (which is required for tar)
                 with fsspec.open(address, "wb", block_size=self.block_size, **self.storage_options) as remote_stream:
-                    with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.gzip_compress_level) as gz:
+                    with gzip.GzipFile(filename="", fileobj=remote_stream, mode="wb", compresslevel=self.compress_level) as gz:
                         with tarfile.open(fileobj=gz, mode="w", copybufsize=self.block_size) as tar:
                             for item in os.listdir(self.mount_path):
                                 # Ensure mount_path structure is kept in the archive

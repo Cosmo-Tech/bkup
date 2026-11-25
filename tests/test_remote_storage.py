@@ -35,7 +35,7 @@ def test_remote_storage_init_with_password_env(mock_kube_cls, base_env):
 @patch("src.lib.remote_storage.Kubernetes")
 def test_remote_storage_custom_transfer_settings(mock_kube_cls, base_env, monkeypatch):
     monkeypatch.setenv("BKUP_BLOCK_SIZE", str(32 * 1024 * 1024))
-    monkeypatch.setenv("BKUP_GZIP_COMPRESS_LEVEL", "0")
+    monkeypatch.setenv("BKUP_COMPRESS_LEVEL", "0")
 
     rs = RemoteStorage()
     assert rs.block_size == 32 * 1024 * 1024

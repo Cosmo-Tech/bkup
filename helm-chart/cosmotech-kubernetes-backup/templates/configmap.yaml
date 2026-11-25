@@ -31,7 +31,7 @@ data:
 
   # Files & streams
   BKUP_BLOCK_SIZE_MIB: {{ .Values.backup.blockSizeMiB | quote }}
-  BKUP_GZIP_COMPRESS_LEVEL: {{ .Values.backup.gzipCompressLevel | quote }}
+  BKUP_COMPRESS_LEVEL: {{ .Values.backup.compressLevel | quote }}
 
   # Backup targets
   BKUP_VOLUMES_NAMESPACES: {{ .Values.backup.volume.namespaces | toJson | quote }}

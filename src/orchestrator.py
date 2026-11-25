@@ -26,7 +26,7 @@ storage_username                = os.getenv('BKUP_STORAGE_USERNAME')
 storage_password_secret_name    = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_NAME')
 storage_password_secret_key     = os.getenv('BKUP_STORAGE_PASSWORD_SECRET_KEY')
 block_size_mib                  = os.getenv("BKUP_BLOCK_SIZE_MIB")
-gzip_compress_level             = os.getenv("BKUP_GZIP_COMPRESS_LEVEL")
+compress_level                  = os.getenv("BKUP_COMPRESS_LEVEL")
 
 DEFAULT_POD_SECURITY_CONTEXT = {
     "runAsNonRoot": True,
@@ -70,7 +70,7 @@ job_config_common = {
     "STORAGE_PASSWORD_SECRET_NAME": storage_password_secret_name,
     "STORAGE_PASSWORD_SECRET_KEY":  storage_password_secret_key,
     "BKUP_BLOCK_SIZE_MIB":          block_size_mib,
-    "BKUP_GZIP_COMPRESS_LEVEL":     gzip_compress_level,
+    "BKUP_COMPRESS_LEVEL":          compress_level,
 }
 
 orchestrator_namespace = os.getenv('BKUP_ORCHESTRATOR_NAMESPACE')

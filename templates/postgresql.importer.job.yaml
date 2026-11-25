@@ -60,8 +60,8 @@ spec:
               value: "true"
             - name: BKUP_BLOCK_SIZE_MIB
               value: "{{ BKUP_BLOCK_SIZE_MIB }}"
-            - name: BKUP_GZIP_COMPRESS_LEVEL
-              value: "{{ BKUP_GZIP_COMPRESS_LEVEL }}"
+            - name: BKUP_COMPRESS_LEVEL
+              value: "{{ BKUP_COMPRESS_LEVEL }}"
 
         # --- SIDECAR CONTAINER: Restore the database (with real PostgreSQL binaries) ---
         - name: database-restorer
